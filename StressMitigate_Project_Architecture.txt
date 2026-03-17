@@ -1,0 +1,826 @@
+================================================================================
+  STRESSMITIGATE — COMPLETE PROJECT ARCHITECTURE & DOCUMENTATION
+  Generated: 2026-03-16
+================================================================================
+
+TABLE OF CONTENTS
+─────────────────
+1. Project Overview
+2. Technology Stack
+3. Directory Structure
+4. File-by-File Documentation
+5. System Architecture (Data Flow)
+6. Database Design (MongoDB)
+7. ML Models Architecture
+8. AI Pipeline (How AI Responses Work)
+9. Wellness Score Calculation (Current & Proposed)
+10. Authentication Flow
+11. Frontend Architecture
+12. Known Issues & Bugs
+13. Suggested Improvements & Better Strategies
+
+================================================================================
+ 1. PROJECT OVERVIEW
+================================================================================
+
+StressMitigate is an AI-powered mental health companion web application that
+detects emotional stress through three modalities:
+  • TEXT  — Analyzes typed messages using a fine-tuned BERT model
+  • VOICE — Analyzes vocal tone using a Wav2Vec2-based TFLite model
+  • FACE  — Analyzes facial expressions using a fine-tuned MobileNetV2 model
+
+The system fuses these signals, sends them as context to Google's Gemini API,
+and generates empathetic, personalized responses.
+
+================================================================================
+ 2. TECHNOLOGY STACK
+================================================================================
+
+ Backend:
+  • Python 3.10+
+  • FastAPI (async web framework)
+  • Motor (async MongoDB driver for Python)
+  • Pydantic v2 (data validation & serialization)
+  • bcrypt (password hashing)
+  • PyJWT (JSON Web Token authentication)
+  • python-dotenv (environment variable management)
+
+ ML/AI:
+  • TensorFlow / Keras (Face model: MobileNetV2, Text model: BERT)
+  • TensorFlow Lite (Voice model: Wav2Vec2)
+  • Hugging Face Transformers (BertTokenizer, TFBertForSequenceClassification)
+  • OpenCV (cv2 — face detection via Haar Cascade)
+  • librosa (audio loading & resampling)
+  • NumPy (numerical operations)
+  • Google Generative AI SDK (Gemini API integration)
+
+ Database:
+  • MongoDB (document database, accessed via Motor async driver)
+  • Collections: users, checkins, conversations
+
+ Frontend:
+  • Vanilla HTML5, CSS3, JavaScript (Single Page Application)
+  • Manrope font (Google Fonts)
+  • Material Icons Round (Google Icons)
+  • No framework (no React/Vue/Angular — pure JS)
+
+ Infrastructure:
+  • Uvicorn (ASGI server)
+  • .env file for secrets (GEMINI_API_KEY, MONGO_URI, JWT_SECRET)
+
+================================================================================
+ 3. DIRECTORY STRUCTURE
+================================================================================
+
+StressMitigate0/
+├── .env                          # Environment variables (API keys, DB URI)
+├── .gitignore                    # Git ignore rules
+├── main.py                       # FastAPI entry point (primary server)
+├── app.py                        # Legacy/old FastAPI entry (unused now)
+├── Requirement.txt               # Old requirements file
+├── requirements.txt              # Python dependencies
+├── project_context.md            # Project notes/context from earlier work
+├── hybrid_model_cases.txt        # Documentation of modality combinations
+│
+├── backend/                      # Backend Python package
+│   ├── __init__.py               # Package marker
+│   ├── config.py                 # Central configuration (paths, API keys, constants)
+│   ├── database.py               # MongoDB connection management (Motor async)
+│   ├── schemas.py                # Pydantic request/response models
+│   ├── auth.py                   # JWT authentication & bcrypt password utilities
+│   ├── brain.py                  # Emotion fusion + Gemini API integration
+│   ├── ml_service.py             # ML model loading & inference (Face, Voice, Text)
+│   └── routers/
+│       ├── __init__.py
+│       ├── auth_router.py        # POST /api/v1/auth/register, /login
+│       ├── user_router.py        # GET/PUT /api/v1/user/preferences
+│       ├── checkin_router.py     # POST /api/v1/analyze/check-in
+│       └── chat_router.py        # POST /api/v1/chat/message (multimodal)
+│
+├── models/                       # ML model files & training scripts
+│   ├── text_model.py             # Legacy DistilBERT text analysis (unused by main.py)
+│   └── Models/
+│       ├── saved_stress_model/   # BERT text stress classifier
+│       │   ├── tf_model.h5       # BERT weights (~438MB)
+│       │   ├── config.json       # Model configuration
+│       │   ├── tokenizer_config.json
+│       │   ├── vocab.txt         # BERT vocabulary
+│       │   ├── special_tokens_map.json
+│       │   └── predict_realtime.py
+│       ├── FSM/                  # Facial Stress Model
+│       │   ├── fine_tuned_stress_model.keras  # MobileNetV2 weights (~26MB)
+│       │   ├── best_stress_model.keras
+│       │   ├── fine_tuned_stress_model.h5
+│       │   ├── Run_realtime.py   # Standalone face stress detector
+│       │   ├── run_face_stress.py
+│       │   └── train_stress_model.py
+│       └── VSM/                  # Voice Stress Model
+│           ├── stress_model_ultra.tflite   # Wav2Vec2 TFLite model
+│           ├── finetuned_best.weights.h5   # Full Wav2Vec2 weights (~408MB)
+│           ├── run_voice_stress.py
+│           ├── Train_Voice_Stress.py
+│           └── Fine_Tune_Voice_Stress.py
+│
+├── static/                       # Frontend static assets
+│   ├── app.js                    # All frontend JavaScript logic
+│   └── style.css                 # All CSS styles (dark theme)
+│
+└── templates/
+    └── index.html                # Main HTML (Single Page Application)
+
+================================================================================
+ 4. FILE-BY-FILE DOCUMENTATION
+================================================================================
+
+── main.py (PRIMARY ENTRY POINT) ──────────────────────────────────────────────
+  Role: FastAPI application factory with async lifespan management.
+  What it does:
+    1. On startup: Connects to MongoDB, loads all 3 ML models
+    2. Registers 4 routers: auth, user, checkin, chat
+    3. Mounts /static directory for frontend assets
+    4. Serves index.html at root URL /
+    5. Provides /health endpoint for status checking
+  Run command: python main.py (starts uvicorn on port 8000)
+
+── app.py (LEGACY — NOT USED) ─────────────────────────────────────────────────
+  Role: Old entry point from before the refactoring.
+  What it does: Has a /analyze_text endpoint using models/text_model.py
+  Status: DEPRECATED — not used by main.py. Can be safely removed.
+
+── backend/config.py ──────────────────────────────────────────────────────────
+  Role: Central configuration file. All hardcoded values and env vars live here.
+  Key Constants:
+    • FSM_MODEL_PATH → path to MobileNetV2 .keras file
+    • FSM_IMG_SIZE → (64, 64) — face input size
+    • FSM_CLASSES → ["High Stress", "Low Stress", "No Stress"]
+    • VSM_MODEL_PATH → path to Wav2Vec2 .tflite file
+    • VSM_SAMPLE_RATE → 16000 Hz
+    • VSM_TARGET_LEN → 80000 samples (5 seconds)
+    • VSM_CLASSES → ["No Stress", "Low Stress", "High Stress"]
+    • TEXT_MODEL_DIR → path to BERT model directory
+    • TEXT_CLASSES → ["No Stress", "STRESS DETECTED"]
+    • GEMINI_MODEL → "gemini-2.0-flash"
+    • LLM_FALLBACK → Default response when Gemini fails
+
+── backend/database.py ────────────────────────────────────────────────────────
+  Role: MongoDB connection manager using Motor (async driver).
+  Collections Used:
+    • users — user accounts (email, hashed_password, preferences)
+    • checkins — mood check-in entries (mood_state, optional_notes)
+    • conversations — AI chat interactions (messages, emotions, responses)
+  Indexes Created:
+    • users.email (unique) — fast login/register lookups
+    • checkins.user_id — fast check-in history queries
+    • conversations.(user_id, session_id) — fast session lookups
+  Behavior: Non-blocking. If MongoDB is down, server starts anyway;
+            endpoints return HTTP 503.
+
+── backend/schemas.py ─────────────────────────────────────────────────────────
+  Role: Pydantic models for all API request/response validation.
+  Models:
+    • RegisterRequest  → email (EmailStr), password (min 6), display_name
+    • LoginRequest     → email (EmailStr), password
+    • TokenResponse    → access_token, user_id, display_name
+    • PrivacySettings  → allow_text (bool), allow_voice (bool), allow_camera (bool)
+    • UserPreferences  → communication_style (str), privacy_settings
+    • CheckInRequest   → mood_state (str), optional_notes (str|null)
+    • CheckInResponse  → message, suggestion, timestamp
+    • DetectedEmotions → text (str|null), voice (str|null), face (str|null), confidence
+    • ChatResponse     → detected_emotions, ai_response, modalities_used, timestamp
+
+── backend/auth.py ────────────────────────────────────────────────────────────
+  Role: Authentication utilities.
+  Functions:
+    • hash_password(password) → bcrypt hash with auto-salt
+    • verify_password(plain, hashed) → bcrypt comparison
+    • create_token(user_id, email) → JWT with 24-hour expiry
+    • decode_token(token) → Validates and decodes JWT
+    • get_current_user(credentials) → FastAPI dependency that:
+        1. Extracts JWT from Authorization header
+        2. Decodes it
+        3. Fetches user document from MongoDB
+        4. Returns the full user dict (used by all protected endpoints)
+
+── backend/ml_service.py ──────────────────────────────────────────────────────
+  Role: Singleton ML model manager. Loads models at startup, provides inference.
+  
+  Models:
+    1. Face Model (MobileNetV2):
+       - Rebuilds architecture: MobileNetV2 → GAP → BN → Dense(128) → Dense(3)
+       - Loads weights from .keras file
+       - Also loads Haar Cascade XML for face pre-detection
+       - predict_face(image_bytes):
+         * Decodes image from bytes
+         * Detects face using Haar Cascade (min 60x60)
+         * Crops largest face
+         * Converts BGR→RGB, resizes to 64x64, normalizes [0,1]
+         * Returns: {"label": "High/Low/No Stress", "confidence": float}
+
+    2. Voice Model (Wav2Vec2 TFLite):
+       - Loads .tflite model into TF Lite interpreter
+       - predict_voice(audio_bytes):
+         * Loads audio via librosa at 16kHz
+         * Detects silent audio (amplitude < 1e-4)
+         * Pads/truncates to 80000 samples
+         * Normalizes (zero-mean, unit-std)
+         * Runs TFLite inference
+         * Returns: {"label": "No/Low/High Stress", "confidence": float}
+
+    3. Text Model (BERT):
+       - Loads BertTokenizer + TFBertForSequenceClassification from local directory
+       - predict_text(text):
+         * Tokenizes with max_length=128
+         * Runs BERT inference, applies softmax
+         * Returns: {"label": "No Stress" or "STRESS DETECTED", "confidence": float}
+  
+  Edge Cases Handled:
+    • Model file not found → Returns {"label": "unavailable"}
+    • Import error (missing deps) → Same graceful fallback
+    • Silent audio → Returns {"label": "silent_audio"}
+    • No face detected → Returns {"label": "no_face_detected"}
+
+── backend/brain.py ───────────────────────────────────────────────────────────
+  Role: The "brain" — emotion fusion + Gemini API response generation.
+  
+  How it works (CRITICAL to understand):
+  
+    Step 1: _detect_conflict(emotions)
+      - Checks if different modalities give contradictory signals
+      - Example: Text says "No Stress" but Voice says "High Stress"
+      - If conflict found, generates a warning for Gemini's system prompt
+    
+    Step 2: generate_response(emotions, user_text, communication_style)
+      - Builds a dynamic SYSTEM PROMPT for Gemini containing:
+        * AI persona ("You are Elysia, a compassionate AI mental-health companion")
+        * Communication style from user preferences
+        * Guidelines (keep responses 2-4 sentences, never diagnose)
+        * Emotional context from each active modality with confidence %
+        * Any conflict warnings
+      - Sends the user's text as the USER MESSAGE
+      - Uses google.generativeai SDK (genai) to call Gemini
+      - On any error: returns LLM_FALLBACK constant
+    
+    Example System Prompt Sent to Gemini:
+      "You are Elysia, a compassionate AI mental-health companion.
+       Communicate in a **Gentle & Reassuring** tone.
+       Keep responses concise (2-4 sentences), supportive, and safe.
+       Never diagnose, prescribe, or replace professional help.
+       Emotional context from user's multimodal inputs:
+       Text analysis indicates **STRESS DETECTED** (confidence 94%).
+       Voice tonality (Wav2Vec2) indicates **High Stress** (confidence 87%)."
+    
+    Then user's actual text is sent as the message.
+    Gemini responds empathetically based on this hidden context.
+
+── backend/routers/auth_router.py ─────────────────────────────────────────────
+  Endpoints:
+    POST /api/v1/auth/register
+      - Creates new user document in MongoDB
+      - Default privacy: text=true, voice=true, camera=false
+      - Returns JWT (auto-login after registration)
+    
+    POST /api/v1/auth/login
+      - Looks up user by exact email match
+      - Verifies bcrypt password
+      - Returns JWT token + user info
+  
+  CURRENT BUG: Email lookup is case-sensitive ("User@email.com" ≠ "user@email.com")
+
+── backend/routers/checkin_router.py ──────────────────────────────────────────
+  Endpoint:
+    POST /api/v1/analyze/check-in
+      - Accepts: mood_state ("Calm"/"Neutral"/"Anxious"/"Stressed"), optional_notes
+      - Saves to MongoDB checkins collection
+      - Returns a calming suggestion based on the mood
+  
+  CURRENT ISSUES:
+    • Does NOT run text analysis on the optional_notes
+    • Does NOT calculate or return a stress score
+    • Does NOT update the wellness score
+
+── backend/routers/chat_router.py ─────────────────────────────────────────────
+  Endpoint:
+    POST /api/v1/chat/message (multipart/form-data)
+      - Accepts: text (string), audio (file), image (file)
+      - Respects user's privacy_settings (skips disabled modalities)
+      - Runs applicable ML models
+      - Calls brain.generate_response() for Gemini AI response
+      - Saves full conversation to MongoDB
+      - Returns: detected_emotions, ai_response, modalities_used, timestamp
+
+── backend/routers/user_router.py ─────────────────────────────────────────────
+  Endpoints:
+    GET /api/v1/user/preferences — Returns current communication_style + privacy
+    PUT /api/v1/user/preferences — Updates them in MongoDB
+
+── static/app.js ──────────────────────────────────────────────────────────────
+  Role: All frontend application logic.
+  State Management: Uses localStorage for token, user info, session count.
+  Key Functions:
+    • switchTab() — Toggle between Login/Register forms
+    • handleLogin/handleRegister — API calls for auth
+    • enterApp() — Switches from auth page to app shell
+    • navigate(page) — SPA page switching (dashboard, checkin, chat, profile)
+    • selectDashMood() — Dashboard mood button handler (submits quick check-in)
+    • selectCheckinMood() — Check-in page mood selection
+    • submitCheckin() — Sends check-in to API, shows response
+    • sendMessage() — Sends chat message (with optional audio/image)
+    • toggleRecording() — MediaRecorder for voice capture
+    • captureImage() — Camera capture via getUserMedia + canvas
+    • togglePrivacy() — UI-only toggle (NOT persisted to backend)
+    • updateStyle() — Persists communication style to backend
+  
+  CURRENT ISSUES:
+    • Privacy toggles only toggle CSS class, don't sync with backend
+    • Dashboard mood buttons submit silently (no feedback)
+    • Check-in shows response but doesn't redirect
+    • No conversation context (each message is standalone to Gemini)
+    • Audio/image captured but displayed as "sent for analysis" only
+    • Session count stored in localStorage (lost on clear)
+
+── static/style.css ───────────────────────────────────────────────────────────
+  Role: Complete dark theme design system.
+  Design: Premium dark mode with accent blue (#137fec), purple gradients,
+          glassmorphism effects, Material Icons Round icons, Manrope font.
+  Responsive: Breakpoints at 1024px (tablet) and 768px (mobile).
+
+── templates/index.html ───────────────────────────────────────────────────────
+  Role: Single HTML file containing the entire SPA.
+  Pages (shown/hidden via CSS):
+    1. page-auth — Login/Register forms
+    2. page-dashboard — Mood selector, Wellness Score, Quick Access, Stats
+    3. page-checkin — Mood buttons + text area + submit
+    4. page-chat — AI companion chat with emotion insight panel
+    5. page-profile — Settings/preferences screen
+
+================================================================================
+ 5. SYSTEM ARCHITECTURE (DATA FLOW)
+================================================================================
+
+ User opens browser → GET / → main.py returns index.html
+   │
+   ├── LOGIN/REGISTER:
+   │   Browser → POST /api/v1/auth/login → auth_router.py
+   │     → MongoDB.users.find_one({email}) → bcrypt.checkpw()
+   │     → create_token(user_id, email) → JWT returned to browser
+   │     → Browser stores token in localStorage
+   │
+   ├── CHECK-IN:
+   │   Browser → POST /api/v1/analyze/check-in (with JWT)
+   │     → auth.get_current_user() validates JWT
+   │     → checkin_router saves {mood_state, notes, timestamp} to MongoDB
+   │     → Returns suggestion text
+   │
+   ├── AI CHAT (Key Flow):
+   │   Browser → POST /api/v1/chat/message (multipart/form-data, with JWT)
+   │     → auth.get_current_user() validates JWT
+   │     → chat_router.py checks user's privacy_settings
+   │     │
+   │     ├── If text provided → ml_service.predict_text(text) → BERT inference
+   │     ├── If audio provided → ml_service.predict_voice(audio_bytes) → TFLite
+   │     └── If image provided → ml_service.predict_face(image_bytes) → MobileNetV2
+   │     │
+   │     → brain.generate_response(emotions, text, style)
+   │       → Builds system prompt with all detected emotions
+   │       → genai.GenerativeModel("gemini-2.0-flash").generate_content(text)
+   │       → Returns Gemini's empathetic response
+   │     │
+   │     → Saves conversation to MongoDB.conversations
+   │     → Returns: {detected_emotions, ai_response, modalities_used}
+   │
+   └── PREFERENCES:
+       Browser → PUT /api/v1/user/preferences (with JWT)
+         → user_router updates communication_style & privacy in MongoDB
+
+================================================================================
+ 6. DATABASE DESIGN (MongoDB)
+================================================================================
+
+ Database: stress_mitigate
+
+ ── Collection: users ──
+ {
+   "_id": ObjectId,
+   "email": "user@example.com",        // unique index
+   "display_name": "Alex",
+   "hashed_password": "$2b$12$...",     // bcrypt hash
+   "communication_style": "Gentle & Reassuring",
+   "privacy_settings": {
+     "allow_text": true,
+     "allow_voice": true,
+     "allow_camera": false
+   },
+   "created_at": ISODate("2026-03-16T...")
+ }
+
+ ── Collection: checkins ──
+ {
+   "_id": ObjectId,
+   "user_id": "string (ObjectId as string)",  // indexed
+   "mood_state": "Stressed",
+   "optional_notes": "I'm feeling really overwhelmed today",
+   "timestamp": ISODate("2026-03-16T...")
+ }
+ MISSING FIELDS (should be added):
+   • "stress_category": "High Stress"
+   • "stress_score": 94.2
+   • "source": "checkin" or "dashboard_quick"
+
+ ── Collection: conversations ──
+ {
+   "_id": ObjectId,
+   "user_id": "string",
+   "session_id": "uuid4 string",
+   "message_payload": "I'm feeling stressed about work",
+   "detected_emotions": {
+     "text": {"label": "STRESS DETECTED", "confidence": 0.94},
+     "voice": {"label": "High Stress", "confidence": 0.87}
+   },
+   "modalities_used": ["text", "voice"],
+   "ai_response": "I hear you. Work pressure can...",
+   "timestamp": ISODate("2026-03-16T...")
+ }
+
+ MISSING COLLECTIONS (should be added):
+   • wellness_scores — daily/weekly aggregated wellness scores
+   • weekly_reports — generated weekly summary documents
+
+================================================================================
+ 7. ML MODELS ARCHITECTURE
+================================================================================
+
+ ┌──────────────────────────────────────────────────────────────┐
+ │ TEXT STRESS MODEL (BERT)                                     │
+ │ Architecture: bert-base-uncased fine-tuned                   │
+ │ Input: Tokenized text (max 128 tokens)                       │
+ │ Output: 2 classes → "No Stress" (0), "STRESS DETECTED" (1)  │
+ │ Files: tf_model.h5 (~438MB), vocab.txt, config.json          │
+ │ Inference: ~100ms on CPU                                     │
+ └──────────────────────────────────────────────────────────────┘
+
+ ┌──────────────────────────────────────────────────────────────┐
+ │ VOICE STRESS MODEL (Wav2Vec2 → TFLite)                      │
+ │ Architecture: Wav2Vec2-base + Attention Pooling + Dense      │
+ │ Input: Raw waveform, 80000 float32 samples (5s @ 16kHz)     │
+ │ Output: 3 classes → "No Stress", "Low Stress", "High Stress"│
+ │ File: stress_model_ultra.tflite                              │
+ │ Preprocessing: load → resample 16kHz → pad/truncate →       │
+ │                normalize (zero-mean, unit-std)               │
+ │ CRITICAL: Expects RAW waveforms, NOT MFCCs                  │
+ └──────────────────────────────────────────────────────────────┘
+
+ ┌──────────────────────────────────────────────────────────────┐
+ │ FACIAL STRESS MODEL (MobileNetV2)                           │
+ │ Architecture: MobileNetV2 + GAP + BN + Dense(128) + Dense(3)│
+ │ Input: 64×64 RGB face image, normalized [0,1]               │
+ │ Output: 3 classes → "High Stress", "Low Stress", "No Stress"│
+ │ File: fine_tuned_stress_model.keras (~26MB)                  │
+ │ Preprocessing: Haar Cascade face detect → crop → resize →   │
+ │                BGR→RGB → normalize                          │
+ └──────────────────────────────────────────────────────────────┘
+
+================================================================================
+ 8. AI PIPELINE (HOW AI RESPONSES WORK)
+================================================================================
+
+ When a user sends a message in the AI Session:
+
+ STEP 1: LOCAL ML ANALYSIS
+   User's text → BERT model → "STRESS DETECTED" (confidence: 94%)
+   User's audio → Wav2Vec2 TFLite → "High Stress" (confidence: 87%)
+   User's image → MobileNetV2 → "Low Stress" (confidence: 62%)
+
+ STEP 2: EMOTION FUSION (brain.py)
+   Collects all modality results into a dict:
+   {
+     "text": {"label": "STRESS DETECTED", "confidence": 0.94},
+     "voice": {"label": "High Stress", "confidence": 0.87},
+     "face": {"label": "Low Stress", "confidence": 0.62}
+   }
+
+ STEP 3: CONFLICT DETECTION
+   Checks if positive modalities (No Stress, Low Stress, Calm, Neutral)
+   conflict with negative modalities (STRESS DETECTED, High Stress).
+   In this example: Face (positive) conflicts with Text+Voice (negative).
+   → Adds: "⚠️ CONFLICT DETECTED: face signals appear positive, but
+     text, voice show distress. Gently check in on this discrepancy."
+
+ STEP 4: SYSTEM PROMPT CONSTRUCTION
+   Builds a hidden prompt for Gemini:
+   ──────────────────────────────────────────────
+   "You are Elysia, a compassionate AI mental-health companion.
+   Communicate in a **Gentle & Reassuring** tone.
+   Keep responses concise (2-4 sentences), supportive, and safe.
+   Never diagnose, prescribe, or replace professional help.
+   Emotional context from user's multimodal inputs:
+   Text analysis indicates **STRESS DETECTED** (confidence 94%).
+   Voice tonality (Wav2Vec2) indicates **High Stress** (confidence 87%).
+   Facial expression (MobileNetV2) indicates **Low Stress** (confidence 62%).
+   ⚠️ CONFLICT DETECTED: face signals appear positive, but text, voice
+   show distress. Gently check in on this discrepancy."
+   ──────────────────────────────────────────────
+
+ STEP 5: GEMINI API CALL
+   • Model: gemini-2.0-flash
+   • System Instruction: [The prompt above]
+   • User Message: [The user's actual typed text]
+   • Gemini generates an empathetic response based on BOTH the hidden
+     emotional context AND the user's actual words.
+
+ STEP 6: RESPONSE DELIVERY
+   Gemini's response is returned to the frontend and displayed in chat.
+   The detected emotions are shown in the Emotion Insight sidebar.
+
+ FALLBACK:
+   If Gemini API fails (timeout, invalid key, network error):
+   → Returns: "I'm here for you. Let's take a deep breath together.
+     My connection is a bit slow right now, but I am listening."
+
+================================================================================
+ 9. WELLNESS SCORE CALCULATION
+================================================================================
+
+ CURRENT STATE:
+   The wellness score is HARDCODED at 72 in the HTML:
+     <div class="score-ring" style="--score: 72">
+       <span class="score-value">72</span>
+     </div>
+   It NEVER changes. There is NO calculation logic anywhere in the codebase.
+
+ PROPOSED CALCULATION (to be implemented):
+   
+   Score Components (100-point scale, lower = more stressed):
+   ─────────────────────────────────────────────────────────
+   a) Check-in mood scores (40% weight):
+      Calm=100, Neutral=75, Anxious=40, Stressed=20
+      Take average of today's check-in moods.
+
+   b) AI session stress scores (40% weight):
+      From BERT text analysis:
+      "No Stress" → 100 points
+      "STRESS DETECTED" conf < 70% → 60 points
+      "STRESS DETECTED" conf 70-90% → 35 points
+      "STRESS DETECTED" conf > 90% → 15 points
+      Take average of today's conversation stress levels.
+
+   c) Engagement bonus (20% weight):
+      Did user check in today? +50 points
+      Did user have an AI session? +50 points
+      Full engagement = 100 points
+
+   Daily Wellness Score = (a × 0.4) + (b × 0.4) + (c × 0.2)
+
+   7-Day Rolling Average: Average of last 7 daily scores.
+   New users: Show "--" (no data yet).
+
+================================================================================
+ 10. AUTHENTICATION FLOW
+================================================================================
+
+ REGISTRATION:
+   1. User fills email, display_name, password
+   2. POST /api/v1/auth/register
+   3. Backend checks if email exists in MongoDB
+   4. Hashes password with bcrypt + random salt
+   5. Saves user document to MongoDB
+   6. Creates JWT (sub=user_id, email, exp=24h)
+   7. Returns token + user_id + display_name
+   8. Frontend stores token in localStorage
+
+ LOGIN:
+   1. User fills email, password
+   2. POST /api/v1/auth/login
+   3. Backend finds user by email (EXACT match — bug!)
+   4. Verifies password with bcrypt
+   5. Creates JWT, returns to frontend
+
+ PROTECTED ENDPOINTS:
+   All endpoints (except /auth/register and /auth/login) require:
+   Authorization: Bearer <JWT>
+   → Decoded by get_current_user() → Fetches user from MongoDB
+
+================================================================================
+ 11. FRONTEND ARCHITECTURE
+================================================================================
+
+ The frontend is a single-page application (SPA) without a framework.
+ Navigation works by showing/hiding <div> elements with CSS classes.
+
+ Pages:
+   #page-auth      — Visible when not logged in
+   #page-dashboard — Dashboard with mood, wellness, quick access, stats
+   #page-checkin   — Quick check-in form
+   #page-chat      — AI companion chat with emotion insight sidebar
+   #page-profile   — Settings and preferences
+
+ State:
+   • token stored in localStorage('sm_token')
+   • currentUser stored in localStorage('sm_user') as JSON
+   • sessionCount stored in localStorage('sm_sessions')
+   • mediaRecorder for voice recording
+   • audioChunks[] for audio data
+   • capturedImageBlob for camera capture
+
+ Navigation: navigate(page) function shows/hides pages.
+
+================================================================================
+ 12. KNOWN ISSUES & BUGS
+================================================================================
+
+ BUG 1: Email is case-sensitive
+   auth_router.py line 23: db.users.find_one({"email": req.email})
+   Does not normalize to lowercase. "User@Email.com" ≠ "user@email.com"
+
+ BUG 2: No password visibility toggle
+   Login and register forms have type="password" with no eye button.
+
+ BUG 3: Password not cleared on failed login
+   The password field retains its value after a failed attempt.
+
+ BUG 4: Wellness score is hardcoded (72)
+   No calculation logic exists. Always shows 72 for all users.
+
+ BUG 5: Dashboard mood buttons do nothing visible
+   selectDashMood() calls submitQuickMood() which silently POSTs to API
+   but provides zero visual feedback to the user.
+
+ BUG 6: Sleep Sound button has no handler
+   HTML button has no onclick attribute (lines 160-163 of index.html).
+
+ BUG 7: Check-in has no success animation or redirect
+   After submission, shows a text response but stays on the check-in page.
+
+ BUG 8: Check-in does NOT analyze text for stress
+   The optional_notes text is saved to MongoDB but never run through
+   the BERT model. No stress_score or stress_category is saved.
+
+ BUG 9: Gemini returns fallback instead of genuine response
+   If GEMINI_API_KEY is invalid or the genai.configure() fails,
+   every response will be the static fallback message.
+
+ BUG 10: "Low Stress" never displayed for text analysis
+   The BERT model only has 2 classes: "No Stress" and "STRESS DETECTED".
+   There's no logic to produce "Low Stress" as an intermediate level.
+
+ BUG 11: Voice recording doesn't confirm to user
+   After recording, audioChunks are stored silently. No visual indicator
+   of recording duration or that recording was captured.
+
+ BUG 12: Camera capture is fire-and-forget
+   Camera briefly flashes green on capture but no preview shown.
+
+ BUG 13: Privacy toggles are UI-only
+   togglePrivacy() only toggles a CSS class. The actual privacy_settings
+   sent to the chat API always use hardcoded values.
+
+ BUG 14: No conversation context (memory)
+   Each message to Gemini is standalone. No previous messages are sent.
+   This means the AI has no memory of the conversation.
+
+ BUG 15: Settings page items are unimplemented
+   "Personal Information", "Security", "Privacy Settings", "Help Center"
+   all have no click handlers — they show chevron_right but do nothing.
+
+ BUG 16: No Exercise tab in navigation
+   Only Dashboard, Check-In, AI Session, and Settings exist.
+
+================================================================================
+ 13. SUGGESTED IMPROVEMENTS & BETTER STRATEGIES
+================================================================================
+
+ ── A. IMMEDIATE FIXES (Must do) ──
+
+ 1. Email Case Normalization:
+    → req.email.lower() on register AND login
+    → db.users.find_one({"email": req.email.lower()})
+
+ 2. Password Eye Toggle:
+    → Add a toggle button next to password input
+    → Toggle between type="password" and type="text"
+
+ 3. Clear Password on Error:
+    → In handleLogin catch block, clear the password input
+
+ 4. Dashboard Mood → Check-in Flow:
+    → When mood button clicked, show a mini text box (like check-in)
+    → Submit both mood + optional text
+    → Show success animation
+
+ 5. Wellness Score Fix:
+    → New users: show "--" instead of 72
+    → Implement calculation from check-ins + AI sessions
+    → Create wellness_scores MongoDB collection
+    → Reset calculation window every 7 days
+
+ 6. Sleep Sound & Breathing:
+    → Link to a guided breathing exercise page
+    → Simple breathing animation (inhale 4s → hold 4s → exhale 6s)
+
+ ── B. CHECK-IN IMPROVEMENTS ──
+
+ 7. Success Animation:
+    → After submit, show animated checkmark/thumbs up overlay
+    → Fade out after 2 seconds
+    → Auto-redirect to dashboard
+
+ 8. Stress Analysis on Check-in Text:
+    → Run BERT model on optional_notes
+    → Save stress_category and stress_score in check-in doc
+    → Use this to compute daily wellness score
+
+ 9. Real-time Wellness Update:
+    → After each check-in, recalculate today's average wellness score
+    → Update the dashboard ring in real time
+
+ ── C. AI SESSION IMPROVEMENTS ──
+
+ 10. Fix Gemini API Integration:
+     → Verify API key is valid
+     → Add proper error logging to diagnose failures
+     → Consider using try/except with more specific error messages
+
+ 11. "Low Stress" Classification:
+     → For BERT: If "STRESS DETECTED" confidence is 84-97.5%, show "Low Stress"
+     → If confidence > 97.5%, show "High Stress"
+     → If "No Stress" confidence > 84%, show "No Stress"
+     → Otherwise show "Low Stress"
+
+ 12. Conversation Context Window:
+     → Store last 4-5 messages in memory (or MongoDB)
+     → Pass them as chat history to Gemini
+     → This gives Gemini "memory" of the conversation
+     → Uses genai's chat interface instead of single generate_content()
+
+ 13. Voice Recording UX:
+     → Show recording timer/waveform during recording
+     → Show "Recording stopped" confirmation
+     → Display text transcription if possible (or at least duration)
+
+ 14. Camera/Face UX:
+     → Show preview of captured image
+     → Display face detection result immediately
+
+ ── D. SETTINGS IMPLEMENTATION ──
+
+ 15. Personal Information:
+     → Modal/form to edit display_name and email
+     → PUT /api/v1/user/profile endpoint
+
+ 16. Security:
+     → Password change form (old password → new password)
+     → PUT /api/v1/auth/change-password endpoint
+
+ 17. Privacy Settings Sync:
+     → Connect UI toggles to PUT /api/v1/user/preferences
+     → Load saved state on page load
+     → Sync between chat panel toggles and settings page
+
+ ── E. ADVANCED FEATURES ──
+
+ 18. Wellness Trend Chart:
+     → Use Chart.js to show a line graph of wellness over 30 days
+     → Show on dashboard below the score ring
+
+ 19. Weekly Report Generation:
+     → Scheduled task (or on-demand) aggregating weekly data
+     → Generate downloadable .txt report
+     → Include: average score, mood trends, suggestion if persistent stress
+
+ 20. Psychiatrist Recommendation:
+     → If wellness score < 30 for 3+ consecutive days
+     → Show a gentle recommendation to seek professional help
+     → "We've noticed persistent stress patterns. Consider speaking
+        with a mental health professional. Here are some resources..."
+
+ 21. Time-of-Day Trigger Analysis:
+     → Store timestamps with check-ins
+     → Detect patterns: "Your stress peaks around 3-4 PM on weekdays"
+     → Display as insight card on dashboard
+
+ ── F. BETTER ARCHITECTURE STRATEGIES ──
+
+ 22. Use Gemini Chat Interface (Not Single Generate):
+     Currently: genai.GenerativeModel.generate_content(single_message)
+     Better: genai.GenerativeModel.start_chat(history=[...])
+     This natively supports conversation history without manual context.
+
+ 23. WebSocket for Real-time Updates:
+     Instead of polling, use FastAPI WebSocket for:
+     → Live wellness score updates
+     → Real-time emotion analysis results
+     → Typing indicators from AI
+
+ 24. Background Task Queue:
+     Use FastAPI's BackgroundTasks for:
+     → Weekly report generation
+     → Wellness score recalculation
+     → Email notifications (if added later)
+
+ 25. Rate Limiting:
+     Add rate limiting to prevent API abuse:
+     → /auth/login: 5 attempts per minute
+     → /chat/message: 30 messages per minute
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

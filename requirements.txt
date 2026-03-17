@@ -1,0 +1,33 @@
+# StressMitigate Backend — Python Dependencies
+
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic[email]>=2.0
+
+# Database
+motor>=3.3.0
+pymongo>=4.6.0
+
+# Authentication
+bcrypt>=4.1.0
+PyJWT>=2.8.0
+
+# Machine Learning
+tensorflow>=2.15.0
+transformers>=4.40.0
+numpy>=1.24.0
+
+# Audio Processing
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Image Processing
+opencv-python-headless>=4.8.0
+
+# Generative AI
+google-generativeai>=0.8.0
+
+# Utilities
+python-multipart>=0.0.9
+python-dotenv>=1.0.0

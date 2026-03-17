@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="StressMitigate — AI-powered mental health companion for stress detection and calming guidance.">
+    <title>StressMitigate — AI Mental Health Companion</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+    <!-- ═══════ AUTH PAGE ═══════ -->
+    <div id="page-auth">
+        <div class="auth-container">
+            <div class="auth-logo">
+                <div class="logo-icon"><span class="material-icons-round">psychology</span></div>
+                <h1>StressMitigate</h1>
+                <p>Your AI-powered mental health companion</p>
+            </div>
+            <div class="auth-card">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Log In</button>
+                    <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Sign Up</button>
+                </div>
+                <div class="auth-error" id="auth-error"></div>
+
+                <!-- Login Form -->
+                <form id="form-login" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="login-email" placeholder="you@example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="password-input-wrap">
+                            <input type="password" id="login-password" placeholder="••••••••" required minlength="6">
+                            <button type="button" class="password-toggle" onclick="togglePasswordVisibility('login-password', this)" tabindex="-1">
+                                <span class="material-icons-round">visibility_off</span>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary" id="btn-login">Log In</button>
+                </form>
+
+                <!-- Register Form -->
+                <form id="form-register" class="hidden" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="reg-name" placeholder="Alex" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="reg-email" placeholder="you@example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="password-input-wrap">
+                            <input type="password" id="reg-password" placeholder="Min 6 characters" required minlength="6">
+                            <button type="button" class="password-toggle" onclick="togglePasswordVisibility('reg-password', this)" tabindex="-1">
+                                <span class="material-icons-round">visibility_off</span>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary" id="btn-register">Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ APP SHELL ═══════ -->
+    <div id="app-shell" class="hidden">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon"><span class="material-icons-round">psychology</span></div>
+                <h2>StressMitigate</h2>
+            </div>
+
+            <div class="sidebar-nav">
+                <button class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+                    <span class="material-icons-round">home</span> Dashboard
+                </button>
+                <button class="nav-item" data-page="checkin" onclick="navigate('checkin')">
+                    <span class="material-icons-round">favorite</span> Check-In
+                </button>
+                <button class="nav-item" data-page="exercises" onclick="navigate('exercises')">
+                    <span class="material-icons-round">self_improvement</span> Exercises
+                </button>
+                <button class="nav-item" data-page="chat" onclick="navigate('chat')">
+                    <span class="material-icons-round">forum</span> AI Session
+                </button>
+                <div class="nav-separator"></div>
+                <button class="nav-item" data-page="profile" onclick="navigate('profile')">
+                    <span class="material-icons-round">settings</span> Settings
+                </button>
+            </div>
+
+            <button class="sidebar-ai-btn" onclick="navigate('chat')">
+                <span class="material-icons-round">auto_awesome</span>
+                Talk to Elysia AI
+            </button>
+
+            <div class="sidebar-user" onclick="navigate('profile')">
+                <div class="user-avatar" id="sidebar-avatar">A</div>
+                <div class="user-info">
+                    <div class="name" id="sidebar-name">User</div>
+                    <div class="role">Wellness Explorer</div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main-content">
+
+            <!-- ── DASHBOARD ── -->
+            <div class="page active" id="page-dashboard">
+                <div class="greeting">
+                    <h1 id="greeting-text">Good morning</h1>
+                    <p>Today is a fresh start. Take a deep breath and find your calm.</p>
+                </div>
+
+                <div class="dashboard-grid">
+                    <!-- Mood Selector -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><span class="material-icons-round">mood</span> How are you feeling?</h3>
+                        </div>
+                        <div class="mood-grid">
+                            <button class="mood-btn" onclick="selectDashMood(this, 'Calm')">
+                                <span class="emoji">😌</span> Calm
+                            </button>
+                            <button class="mood-btn" onclick="selectDashMood(this, 'Neutral')">
+                                <span class="emoji">😊</span> Neutral
+                            </button>
+                            <button class="mood-btn" onclick="selectDashMood(this, 'Anxious')">
+                                <span class="emoji">😰</span> Anxious
+                            </button>
+                            <button class="mood-btn" onclick="selectDashMood(this, 'Stressed')">
+                                <span class="emoji">😣</span> Stressed
+                            </button>
+                        </div>
+                        <!-- Inline share-more box that appears after mood selection -->
+                        <div class="dash-mood-expand" id="dash-mood-expand">
+                            <textarea id="dash-mood-notes" placeholder="Want to share more about how you feel?"></textarea>
+                            <button class="btn-primary btn-small" onclick="submitDashMoodCheckin()">Submit</button>
+                        </div>
+                    </div>
+
+                    <!-- Wellness Score -->
+                    <div class="card wellness-score">
+                        <div class="card-header">
+                            <h3><span class="material-icons-round">insights</span> Wellness Score</h3>
+                        </div>
+                        <div class="score-ring" id="score-ring" style="--score: 0">
+                            <span class="score-value" id="score-value">--</span>
+                        </div>
+                        <div class="score-label" id="score-label">Complete a check-in to start tracking</div>
+                    </div>
+
+                    <!-- Quick Access -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><span class="material-icons-round">grid_view</span> Quick Access</h3>
+                        </div>
+                        <div class="quick-grid">
+                            <button class="quick-btn" onclick="navigate('chat')">
+                                <span class="material-icons-round">chat</span>
+                                <span>Talk to AI</span>
+                            </button>
+                            <button class="quick-btn" onclick="navigate('checkin')">
+                                <span class="material-icons-round">favorite</span>
+                                <span>Check In</span>
+                            </button>
+                            <button class="quick-btn" onclick="navigate('exercises')">
+                                <span class="material-icons-round">self_improvement</span>
+                                <span>Breathing</span>
+                            </button>
+                            <button class="quick-btn" onclick="navigate('exercises')">
+                                <span class="material-icons-round">headphones</span>
+                                <span>Sleep Sound</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <div class="stat-icon blue"><span class="material-icons-round">schedule</span></div>
+                            <div>
+                                <div class="stat-value" id="stat-minutes">0</div>
+                                <div class="stat-label">Minutes Mindful</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green"><span class="material-icons-round">local_fire_department</span></div>
+                            <div>
+                                <div class="stat-value" id="stat-streak">0</div>
+                                <div class="stat-label">Day Active Streak</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon purple"><span class="material-icons-round">chat_bubble</span></div>
+                            <div>
+                                <div class="stat-value" id="stat-sessions">0</div>
+                                <div class="stat-label">AI Sessions</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Wellness Trend Chart ── -->
+                    <div class="dashboard-full-row">
+                        <div class="card card-chart">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">show_chart</span> Wellness Trend</h3>
+                                <select id="chart-range" onchange="loadWellnessChart(this.value)" style="background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:0.82rem;">
+                                    <option value="7">7 Days</option>
+                                    <option value="14">14 Days</option>
+                                    <option value="30" selected>30 Days</option>
+                                </select>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="wellness-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Insights Row ── -->
+                    <div class="dashboard-insights-row">
+                        <div class="card card-insight">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">description</span> Weekly Report</h3>
+                            </div>
+                            <p class="insight-desc">Get a summary of your wellness activity for the past 7 days.</p>
+                            <button class="btn-primary btn-small" onclick="downloadWeeklyReport()"><span class="material-icons-round" style="font-size:16px;vertical-align:middle;margin-right:4px;">download</span> Download Report</button>
+                        </div>
+                        <div class="card card-insight">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">psychology_alt</span> Recommendations</h3>
+                            </div>
+                            <div id="recommendation-content">
+                                <p class="insight-desc">Complete more check-ins to receive personalized insights.</p>
+                            </div>
+                        </div>
+                        <div class="card card-insight">
+                            <div class="card-header">
+                                <h3><span class="material-icons-round">schedule</span> Stress Triggers</h3>
+                            </div>
+                            <div id="triggers-content">
+                                <p class="insight-desc">Check in at different times to identify stress patterns.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── CHECK-IN ── -->
+            <div class="page" id="page-checkin">
+                <div class="checkin-container">
+                    <h1>Quick Check-In</h1>
+                    <p>How are you feeling at this moment? No pressure, no judgment.</p>
+
+                    <div class="checkin-moods">
+                        <button class="checkin-mood-btn" onclick="selectCheckinMood(this, 'Calm')">
+                            <span class="emoji">😌</span> Calm
+                        </button>
+                        <button class="checkin-mood-btn" onclick="selectCheckinMood(this, 'Neutral')">
+                            <span class="emoji">😊</span> Neutral
+                        </button>
+                        <button class="checkin-mood-btn" onclick="selectCheckinMood(this, 'Anxious')">
+                            <span class="emoji">😰</span> Anxious
+                        </button>
+                        <button class="checkin-mood-btn" onclick="selectCheckinMood(this, 'Stressed')">
+                            <span class="emoji">😣</span> Stressed
+                        </button>
+                    </div>
+
+                    <textarea class="checkin-notes" id="checkin-notes" placeholder="Would you like to share more? This step is optional..."></textarea>
+
+                    <button class="btn-primary" id="btn-checkin" onclick="submitCheckin()" disabled>Submit Check-In</button>
+
+                    <!-- Success animation overlay -->
+                    <div class="checkin-success-overlay" id="checkin-success-overlay">
+                        <div class="checkin-success-content">
+                            <div class="success-icon">👍</div>
+                            <h2>Check-In Submitted!</h2>
+                            <p id="checkin-score-display"></p>
+                            <p class="checkin-redirect-msg">Redirecting to dashboard...</p>
+                        </div>
+                    </div>
+
+                    <div class="checkin-response" id="checkin-response">
+                        <div class="suggestion-icon">🌿</div>
+                        <h3 id="checkin-msg"></h3>
+                        <p id="checkin-suggestion"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── AI COMPANION (CHAT) ── -->
+            <div class="page" id="page-chat">
+                <div class="chat-layout">
+                    <div class="chat-main">
+                        <div class="chat-header">
+                            <div class="chat-header-left">
+                                <div class="ai-avatar"><span class="material-icons-round">auto_awesome</span></div>
+                                <div>
+                                    <h3>Elysia AI</h3>
+                                    <div class="status">Active Session</div>
+                                </div>
+                            </div>
+                            <div class="secure-badge">
+                                <span class="material-icons-round">lock</span> SECURE
+                            </div>
+                        </div>
+
+                        <div class="messages-area" id="messages-area">
+                            <div class="message ai">
+                                Hello! I'm Elysia, your AI companion. I'm here to listen and support you. How are you feeling right now?
+                                <div class="msg-time">Just now</div>
+                            </div>
+                        </div>
+
+                        <div class="typing-indicator" id="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+
+                        <div class="chat-input-area">
+                            <button class="chat-btn" id="btn-mic" onclick="toggleRecording()" title="Voice Input">
+                                <span class="material-icons-round">mic</span>
+                            </button>
+                            <button class="chat-btn" id="btn-camera" onclick="captureImage()" title="Camera">
+                                <span class="material-icons-round">photo_camera</span>
+                            </button>
+                            <input type="text" class="chat-input" id="chat-input" placeholder="Type your message..." onkeydown="if(event.key==='Enter')sendMessage()">
+                            <button class="chat-btn send-btn" onclick="sendMessage()" title="Send">
+                                <span class="material-icons-round">send</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Emotion Insight Panel -->
+                    <div class="insight-panel">
+                        <div class="insight-card">
+                            <h4><span class="material-icons-round">analytics</span> Emotion Insight</h4>
+                            <div class="emotion-item">
+                                <span class="emotion-label">Message Tone</span>
+                                <span class="emotion-value neutral" id="insight-text">—</span>
+                            </div>
+                            <div class="emotion-item">
+                                <span class="emotion-label">Vocal Energy</span>
+                                <span class="emotion-value neutral" id="insight-voice">—</span>
+                            </div>
+                            <div class="emotion-item">
+                                <span class="emotion-label">Visual Stress</span>
+                                <span class="emotion-value neutral" id="insight-face">—</span>
+                            </div>
+                        </div>
+
+                        <div class="insight-card">
+                            <h4><span class="material-icons-round">shield</span> Privacy Controls</h4>
+                            <div class="privacy-toggle">
+                                <label>Text Analysis</label>
+                                <div class="toggle active" id="toggle-text" onclick="togglePrivacy('text', this)"></div>
+                            </div>
+                            <div class="privacy-toggle">
+                                <label>Voice Analysis</label>
+                                <div class="toggle active" id="toggle-voice" onclick="togglePrivacy('voice', this)"></div>
+                            </div>
+                            <div class="privacy-toggle">
+                                <label>Camera Analysis</label>
+                                <div class="toggle" id="toggle-camera" onclick="togglePrivacy('camera', this)"></div>
+                            </div>
+                        </div>
+
+                        <div class="insight-card">
+                            <h4><span class="material-icons-round">info</span> Privacy Tip</h4>
+                            <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6;">
+                                Your data is encrypted. No human will ever see this session without your consent.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── EXERCISES ── -->
+            <div class="page" id="page-exercises">
+                <div class="exercises-container">
+                    <h1><span class="material-icons-round" style="vertical-align:middle;margin-right:8px;color:var(--accent);">self_improvement</span>Stress Relief Exercises</h1>
+                    <p>Take a moment for yourself. These exercises are designed to help you find calm and reduce stress.</p>
+
+                    <div class="exercises-grid">
+                        <!-- 1. Box Breathing -->
+                        <div class="exercise-card" id="exercise-breathing">
+                            <div class="exercise-icon">🫁</div>
+                            <h3>Box Breathing</h3>
+                            <p>Calm your nervous system with this simple 4-4-4-4 breathing pattern.</p>
+                            <button class="btn-primary btn-small" onclick="startBreathing()">Start Exercise</button>
+                            <div class="breathing-widget" id="breathing-widget">
+                                <div class="breathing-circle" id="breathing-circle"></div>
+                                <div class="breathing-text" id="breathing-text">Get Ready...</div>
+                                <button class="btn-outline btn-small" onclick="stopBreathing()">Stop</button>
+                            </div>
+                        </div>
+
+                        <!-- 2. Body Scan Meditation -->
+                        <div class="exercise-card">
+                            <div class="exercise-icon">🧘</div>
+                            <h3>Body Scan Meditation</h3>
+                            <p>Slowly bring awareness to each part of your body, releasing tension as you go.</p>
+                            <div class="exercise-steps">
+                                <div class="step">1. Close your eyes and take 3 deep breaths.</div>
+                                <div class="step">2. Notice your feet — any tension? Let it go.</div>
+                                <div class="step">3. Move to your legs, hips, stomach — breathe into each.</div>
+                                <div class="step">4. Feel your chest, shoulders, arms — release.</div>
+                                <div class="step">5. Relax your face, jaw, forehead. You're at peace.</div>
+                            </div>
+                        </div>
+
+                        <!-- 3. 5-4-3-2-1 Grounding -->
+                        <div class="exercise-card">
+                            <div class="exercise-icon">🌍</div>
+                            <h3>5-4-3-2-1 Grounding</h3>
+                            <p>Use your senses to anchor yourself to the present moment.</p>
+                            <div class="exercise-steps">
+                                <div class="step"><strong>5</strong> things you can <em>see</em></div>
+                                <div class="step"><strong>4</strong> things you can <em>touch</em></div>
+                                <div class="step"><strong>3</strong> things you can <em>hear</em></div>
+                                <div class="step"><strong>2</strong> things you can <em>smell</em></div>
+                                <div class="step"><strong>1</strong> thing you can <em>taste</em></div>
+                            </div>
+                        </div>
+
+                        <!-- 4. Progressive Muscle Relaxation -->
+                        <div class="exercise-card">
+                            <div class="exercise-icon">💪</div>
+                            <h3>Progressive Muscle Relaxation</h3>
+                            <p>Tense and release muscle groups to physically release stress.</p>
+                            <div class="exercise-steps">
+                                <div class="step">1. Clench your fists tightly for 5 seconds, then release.</div>
+                                <div class="step">2. Scrunch your shoulders to your ears, hold, release.</div>
+                                <div class="step">3. Tighten your stomach muscles, hold, release.</div>
+                                <div class="step">4. Squeeze your legs together, hold, release.</div>
+                                <div class="step">5. Curl your toes tightly, hold, release. Notice the calm.</div>
+                            </div>
+                        </div>
+
+                        <!-- 5. Mindful Journaling -->
+                        <div class="exercise-card">
+                            <div class="exercise-icon">📝</div>
+                            <h3>Mindful Journaling</h3>
+                            <p>Write freely for 5 minutes. No judgment, just let your thoughts flow.</p>
+                            <div class="exercise-steps">
+                                <div class="step">Pick a prompt: "Right now I feel..." or "I'm grateful for..."</div>
+                                <div class="step">Set a 5-minute timer and write without stopping.</div>
+                                <div class="step">Don't edit. Don't judge. Just flow.</div>
+                                <div class="step">When done, take a deep breath and close the page.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── PROFILE / SETTINGS ── -->
+            <div class="page" id="page-profile">
+                <div style="max-width: 640px; margin: 0 auto;">
+                    <div class="profile-header">
+                        <div class="profile-avatar" id="profile-avatar">A</div>
+                        <h1 id="profile-name">User</h1>
+                        <div class="email" id="profile-email">user@example.com</div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Account Settings</h3>
+                        <div class="settings-list">
+                            <div class="settings-item" onclick="openSettingsModal('personal-info-modal')">
+                                <div class="settings-item-left">
+                                    <div class="icon-wrap blue"><span class="material-icons-round">person</span></div>
+                                    <div class="item-text">
+                                        <div class="title">Personal Information</div>
+                                        <div class="desc">Update your name and email</div>
+                                    </div>
+                                </div>
+                                <span class="material-icons-round chevron">chevron_right</span>
+                            </div>
+                            <div class="settings-item" onclick="openSettingsModal('security-modal')">
+                                <div class="settings-item-left">
+                                    <div class="icon-wrap green"><span class="material-icons-round">shield</span></div>
+                                    <div class="item-text">
+                                        <div class="title">Security</div>
+                                        <div class="desc">Password and authentication</div>
+                                    </div>
+                                </div>
+                                <span class="material-icons-round chevron">chevron_right</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Preferences</h3>
+                        <div class="settings-list">
+                            <div class="settings-item">
+                                <div class="settings-item-left">
+                                    <div class="icon-wrap purple"><span class="material-icons-round">palette</span></div>
+                                    <div class="item-text">
+                                        <div class="title">Communication Style</div>
+                                        <div class="desc" id="pref-style">Gentle & Reassuring</div>
+                                    </div>
+                                </div>
+                                <select id="style-select" style="background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:0.82rem;" onchange="updateStyle(this.value)">
+                                    <option value="Gentle & Reassuring">Gentle & Reassuring</option>
+                                    <option value="Motivational">Motivational</option>
+                                    <option value="Analytical">Analytical</option>
+                                </select>
+                            </div>
+                            <div class="settings-item" onclick="openSettingsModal('privacy-modal')">
+                                <div class="settings-item-left">
+                                    <div class="icon-wrap blue"><span class="material-icons-round">privacy_tip</span></div>
+                                    <div class="item-text">
+                                        <div class="title">Privacy Settings</div>
+                                        <div class="desc">Control which modalities are active</div>
+                                    </div>
+                                </div>
+                                <span class="material-icons-round chevron">chevron_right</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Support</h3>
+                        <div class="settings-list">
+                            <div class="settings-item" onclick="openSettingsModal('help-modal')">
+                                <div class="settings-item-left">
+                                    <div class="icon-wrap green"><span class="material-icons-round">help</span></div>
+                                    <div class="item-text">
+                                        <div class="title">Help Center</div>
+                                    </div>
+                                </div>
+                                <span class="material-icons-round chevron">open_in_new</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-danger" onclick="handleLogout()">
+                        <span class="material-icons-round" style="vertical-align:middle;margin-right:6px;">logout</span>
+                        Log Out
+                    </button>
+
+                    <p style="text-align:center;color:var(--text-muted);font-size:0.75rem;margin-top:20px;">
+                        StressMitigate v2.0.0 — Made with care for your mental health
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Hidden elements -->
+    <input type="file" id="image-picker" accept="image/*" capture="environment" class="hidden">
+    <video id="hidden-video" class="hidden" autoplay></video>
+    <canvas id="hidden-canvas" class="hidden"></canvas>
+
+    <script src="/static/app.js"></script>
+
+    <!-- ═══════ SETTINGS MODALS ═══════ -->
+    <!-- Personal Info Modal -->
+    <div class="settings-modal-overlay" id="personal-info-modal">
+        <div class="settings-modal">
+            <div class="settings-modal-header">
+                <h3>Personal Information</h3>
+                <button class="modal-close" onclick="closeSettingsModal('personal-info-modal')">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="settings-modal-body">
+                <div class="form-group">
+                    <label>Display Name</label>
+                    <input type="text" id="edit-name" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="edit-email" placeholder="your@email.com">
+                </div>
+                <div class="modal-msg" id="profile-msg"></div>
+                <button class="btn-primary" onclick="saveProfile()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Modal -->
+    <div class="settings-modal-overlay" id="security-modal">
+        <div class="settings-modal">
+            <div class="settings-modal-header">
+                <h3>Change Password</h3>
+                <button class="modal-close" onclick="closeSettingsModal('security-modal')">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="settings-modal-body">
+                <div class="form-group">
+                    <label>Current Password</label>
+                    <div class="password-input-wrap">
+                        <input type="password" id="current-pw" placeholder="Enter current password">
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('current-pw', this)" tabindex="-1">
+                            <span class="material-icons-round">visibility_off</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <div class="password-input-wrap">
+                        <input type="password" id="new-pw" placeholder="Min 6 characters">
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('new-pw', this)" tabindex="-1">
+                            <span class="material-icons-round">visibility_off</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-msg" id="password-msg"></div>
+                <button class="btn-primary" onclick="changePassword()">Change Password</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Privacy Modal -->
+    <div class="settings-modal-overlay" id="privacy-modal">
+        <div class="settings-modal">
+            <div class="settings-modal-header">
+                <h3>Privacy Settings</h3>
+                <button class="modal-close" onclick="closeSettingsModal('privacy-modal')">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="settings-modal-body">
+                <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:16px;">Control which modalities the AI can analyze during your sessions.</p>
+                <div class="privacy-toggle">
+                    <label>Text Analysis</label>
+                    <div class="toggle active" id="priv-toggle-text" onclick="toggleSettingsPrivacy('text', this)"></div>
+                </div>
+                <div class="privacy-toggle">
+                    <label>Voice Analysis</label>
+                    <div class="toggle active" id="priv-toggle-voice" onclick="toggleSettingsPrivacy('voice', this)"></div>
+                </div>
+                <div class="privacy-toggle">
+                    <label>Camera / Facial Analysis</label>
+                    <div class="toggle" id="priv-toggle-camera" onclick="toggleSettingsPrivacy('camera', this)"></div>
+                </div>
+                <p style="color:var(--text-muted);font-size:0.78rem;margin-top:16px;">🔒 Your data is encrypted. No human will ever see your sessions without your explicit consent.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Center Modal -->
+    <div class="settings-modal-overlay" id="help-modal">
+        <div class="settings-modal settings-modal-lg">
+            <div class="settings-modal-header">
+                <h3>Help Center</h3>
+                <button class="modal-close" onclick="closeSettingsModal('help-modal')">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="settings-modal-body">
+                <div class="help-section">
+                    <h4>Frequently Asked Questions</h4>
+                    <div class="help-item">
+                        <strong>What does StressMitigate do?</strong>
+                        <p>StressMitigate is an AI-powered mental health companion that detects emotional stress through your text, voice, and facial expressions to provide personalized support.</p>
+                    </div>
+                    <div class="help-item">
+                        <strong>Is my data private?</strong>
+                        <p>Yes. Your data is stored securely and encrypted. No human reads your sessions. You control which modalities are active.</p>
+                    </div>
+                    <div class="help-item">
+                        <strong>How is my Wellness Score calculated?</strong>
+                        <p>Your score is based on your check-in moods (40%), AI session stress levels (40%), and daily engagement (20%). It's a 7-day rolling average.</p>
+                    </div>
+                    <div class="help-item">
+                        <strong>Can the AI replace a therapist?</strong>
+                        <p>No. StressMitigate is a supportive companion, not a replacement for professional mental health care. If you're in crisis, please reach out to a professional.</p>
+                    </div>
+                </div>
+                <div class="help-section">
+                    <h4>Crisis Resources</h4>
+                    <div class="help-item crisis">
+                        <strong>🆘 If you are in immediate danger, call emergency services (112 / 911)</strong>
+                        <p>AASRA (India): 9820466726 | iCall: 9152987821</p>
+                        <p>National Suicide Prevention Lifeline (US): 988</p>
+                        <p>Crisis Text Line: Text HOME to 741741</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

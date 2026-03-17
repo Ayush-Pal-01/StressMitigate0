@@ -1,0 +1,127 @@
+================================================================================
+  STRESSMITIGATE — HYBRID MODEL SYSTEM: MODALITY CASE ANALYSIS
+  Generated: 2026-03-14
+================================================================================
+
+This document summarises every combination of modalities that the
+/api/v1/chat/message endpoint handles, along with the pipeline behaviour
+for each case.
+
+Models:
+  Text  → BertForSequenceClassification  (2 classes: No Stress, STRESS DETECTED)
+  Voice → Wav2Vec2 TFLite, raw waveform  (3 classes: No Stress, Low Stress, High Stress)
+  Face  → MobileNetV2 CNN, 64×64 RGB     (3 classes: High Stress, Low Stress, No Stress)
+
+Note: Text is the PRIMARY modality — when present it always anchors the
+context sent to Gemini. Voice and Face are SUPPLEMENTARY signals.
+
+────────────────────────────────────────────────────────────────────────────────
+ #   Modalities             Pipeline Behaviour
+────────────────────────────────────────────────────────────────────────────────
+
+ 1   TEXT only               • BERT tokenizes input (max_length=128).
+                             • Gemini receives: "Text analysis indicates [X]."
+                             • Most common case for mobile text chat.
+
+ 2   VOICE only              • Audio resampled to 16 kHz, pad/truncate to 80 000
+                               samples, normalize (zero-mean, unit-std).
+                             • TFLite inference on raw waveform (NOT MFCCs).
+                             • Gemini receives: "Voice tonality indicates [X]."
+                             • Silent audio (max amplitude < 1e-4) returns soft
+                               error asking user to retry.
+
+ 3   FACE only               • Image decoded from bytes → Haar Cascade face
+                               detection → crop largest face → resize 64×64 →
+                               normalize [0,1] → MobileNetV2 predict.
+                             • Gemini receives: "Facial expression indicates [X]."
+                             • No face detected → soft error asking for better
+                               lighting / angle.
+
+ 4   TEXT + VOICE             • Both pipelines run. Gemini receives context for
+                               both modalities.
+                             • CONFLICT CHECK: If text is "No Stress" but voice
+                               is "High Stress" (or vice versa), the system
+                               prompt explicitly instructs Gemini to gently
+                               probe the discrepancy.
+
+ 5   TEXT + FACE              • Both pipelines run. Gemini receives context for
+                               both modalities.
+                             • CONFLICT CHECK: Same logic — if text is positive
+                               but face shows distress, Gemini is told to check
+                               in compassionately.
+
+ 6   VOICE + FACE             • Both pipelines run (no text anchor).
+                             • Gemini receives voice + face context.
+                             • User message to Gemini: "[User sent audio/image
+                               input only — no text.]"
+                             • Conflict detection still runs between voice and
+                               face signals.
+
+ 7   TEXT + VOICE + FACE      • FULL MULTIMODAL — all three pipelines run.
+     (Complete)               • Gemini receives the richest context with all
+                               three emotional signals.
+                             • Conflict detection checks ALL pairwise
+                               combinations (positive vs negative sets).
+                             • This is the most accurate case for emotional
+                               assessment.
+
+ 8   NO INPUT                 • No text, no audio, no image provided.
+     (Empty)                  • Returns a friendly guidance message:
+                               "I'm here whenever you're ready…"
+                             • No model inference runs. No Gemini call.
+
+────────────────────────────────────────────────────────────────────────────────
+ EDGE CASES HANDLED
+────────────────────────────────────────────────────────────────────────────────
+
+ E1  PRIVACY OVERRIDE         If user has disabled a modality in their privacy
+                              settings (e.g., allow_camera = false), the
+                              endpoint silently skips that modality even if
+                              data is sent. No error is raised.
+
+ E2  SILENT AUDIO             If audio amplitude is < 1e-4 (essentially
+                              silent), the voice pipeline returns a soft
+                              "silent_audio" result. The emotion is NOT counted
+                              as a strong signal for Gemini.
+
+ E3  NO FACE DETECTED         If Haar Cascade finds zero faces in the image,
+                              the face pipeline returns "no_face_detected"
+                              with a suggestion to adjust lighting. Not
+                              counted as a strong signal.
+
+ E4  MODEL UNAVAILABLE        If any model failed to load at startup (e.g.,
+                              missing file), predict_* returns
+                              {"label": "unavailable", "confidence": 0.0}.
+                              The endpoint gracefully falls back to whatever
+                              models ARE available.
+
+ E5  CONFLICTING EMOTIONS     The brain pipeline explicitly detects when
+                              positive-leaning modalities conflict with
+                              negative-leaning modalities. Gemini is
+                              instructed to gently probe this discrepancy.
+
+ E6  GEMINI TIMEOUT/FAILURE   If the Gemini API fails or times out, the
+                              endpoint returns a safe static fallback:
+                              "I'm here for you. Let's take a deep breath…"
+
+ E7  AUDIO PROCESSING ERROR   If librosa fails to decode the audio (bad
+                              format, corrupted file), the voice pipeline
+                              returns an error dict and the endpoint
+                              continues with remaining modalities.
+
+ E8  IMAGE DECODE ERROR       If cv2.imdecode fails (corrupted image), the
+                              face pipeline returns an error dict.
+
+────────────────────────────────────────────────────────────────────────────────
+ SUMMARY
+────────────────────────────────────────────────────────────────────────────────
+
+ Total modality combinations handled:  8 (7 active + 1 empty)
+ Total edge cases handled:             8 (E1–E8)
+ Grand total scenarios covered:        16
+
+ The system is designed to degrade gracefully — the more modalities are
+ available, the richer the emotional context, but the app never crashes
+ if modalities are missing or fail.
+
+================================================================================

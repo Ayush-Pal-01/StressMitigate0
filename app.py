@@ -1,26 +1,32 @@
-from flask import Flask, render_template, request, jsonify
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.responses import HTMLResponse
+from models.text_model import detect_stress
 
-app = Flask(__name__)
+app = FastAPI(title="StressMitigate API")
 
-@app.route("/")
+class TextInput(BaseModel):
+    text: str
+
+@app.get("/", response_class=HTMLResponse)
 def home():
-    return "StressMitigate Backend Running!"
+    with open("templates/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
-@app.route("/analyze_text", methods=["POST"])
-def analyze_text():
-    data = request.get_json()
-    text = data.get("text", "")
+@app.post("/analyze_text")
+def analyze_text(data: TextInput):
+    stress_level, confidence = detect_stress(data.text)
 
-    # Dummy stress logic (Week 1)
-    if "exam" in text.lower() or "pressure" in text.lower():
-        stress = "HIGH"
+    return {
+        "stress_level": stress_level,
+        "confidence": round(confidence, 2),
+        "message": generate_response(stress_level)
+    }
+
+def generate_response(stress):
+    if stress == "HIGH":
+        return "I sense high stress. Let's pause and breathe slowly."
+    elif stress == "MEDIUM":
+        return "You seem a bit tense. A short break could help."
     else:
-        stress = "LOW"
-
-    return jsonify({
-        "stress_level": stress,
-        "message": "You are not alone. Take a slow breath."
-    })
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        return "You seem calm. Keep maintaining this balance."
