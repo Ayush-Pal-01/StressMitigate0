@@ -15,7 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from backend.config import CORS_ORIGINS
-from backend.database import connect_db, close_db, _connected as db_connected
+from backend.database import connect_db, close_db
+import backend.database as _db_module
 from backend.ml_service import ml_service
 from backend.logger import get_logger
 
@@ -160,7 +161,7 @@ async def health():
             },
         },
         "database": {
-            "connected": db_connected,
+            "connected": _db_module._connected,
         },
         "system": {
             "python_version": sys.version,

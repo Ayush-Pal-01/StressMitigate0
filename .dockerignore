@@ -1,0 +1,49 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+venv/
+env/
+.venv/
+venv_wsl/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment secrets
+.env
+
+# Test artifacts
+.pytest_cache
+htmlcov
+.coverage
+
+# Documentation (not needed in container)
+*.md
+*.txt
+!requirements.txt
+
+# Conversion scripts (not needed at runtime)
+scripts/
+
+# Large model files (mounted as volume instead)
+models/
