@@ -6,6 +6,7 @@ Saves stress_category and stress_score alongside the mood check-in.
 """
 from fastapi import APIRouter, Depends
 from datetime import datetime, timezone
+import asyncio
 from backend.schemas import CheckInRequest
 from backend.auth import get_current_user
 from backend.database import get_db
@@ -59,7 +60,7 @@ async def check_in(data: CheckInRequest, user: dict = Depends(get_current_user))
     # Run BERT text analysis on notes if provided
     stress_analysis = None
     if data.optional_notes and data.optional_notes.strip():
-        bert_result = ml_service.predict_text(data.optional_notes)
+        bert_result = await asyncio.to_thread(ml_service.predict_text, data.optional_notes)
         if bert_result.get("label") != "unavailable":
             stress_analysis = _classify_stress(bert_result)
             doc["stress_category"] = stress_analysis["category"]

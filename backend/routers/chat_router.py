@@ -10,8 +10,9 @@ Privacy-first: respects user's privacy_settings toggles.
 UPDATED: Fetches recent chat history for context windowing and
 classifies text stress into 3 tiers (No/Low/High).
 """
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from datetime import datetime, timezone
+import asyncio
 import uuid
 
 from backend.schemas import ChatResponse, DetectedEmotions
@@ -21,6 +22,12 @@ from backend.brain import generate_response
 from backend.database import get_db
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat (Multimodal)"])
+
+# ─── Upload validation constants ───
+ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/x-wav"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_IMAGE_SIZE = 5 * 1024 * 1024   # 5 MB
 
 
 def _classify_text_stress(result: dict) -> dict:
@@ -90,7 +97,7 @@ async def chat_message(
     # ─── Text Analysis ───
     # Text is ALWAYS checked first (mandatory when provided)
     if text and text.strip() and privacy.get("allow_text", True):
-        result = ml_service.predict_text(text)
+        result = await asyncio.to_thread(ml_service.predict_text, text)
         if result["label"] != "unavailable":
             # Apply 3-tier classification
             result = _classify_text_stress(result)
@@ -99,9 +106,21 @@ async def chat_message(
 
     # ─── Voice Analysis ───
     if audio and privacy.get("allow_voice", True):
+        # Validate MIME type
+        if audio.content_type and audio.content_type not in ALLOWED_AUDIO_TYPES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported audio format: {audio.content_type}. Accepted: {', '.join(ALLOWED_AUDIO_TYPES)}",
+            )
         audio_bytes = await audio.read()
+        # Validate size
+        if len(audio_bytes) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio file too large ({len(audio_bytes) // (1024*1024)}MB). Maximum: 10MB.",
+            )
         if len(audio_bytes) > 0:
-            result = ml_service.predict_voice(audio_bytes)
+            result = await asyncio.to_thread(ml_service.predict_voice, audio_bytes)
             if result["label"] not in ("unavailable", "error", "silent_audio"):
                 emotions["voice"] = result
                 modalities_used.append("voice")
@@ -111,9 +130,21 @@ async def chat_message(
 
     # ─── Face Analysis ───
     if image and privacy.get("allow_camera", False):
+        # Validate MIME type
+        if image.content_type and image.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported image format: {image.content_type}. Accepted: {', '.join(ALLOWED_IMAGE_TYPES)}",
+            )
         image_bytes = await image.read()
+        # Validate size
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image file too large ({len(image_bytes) // (1024*1024)}MB). Maximum: 5MB.",
+            )
         if len(image_bytes) > 0:
-            result = ml_service.predict_face(image_bytes)
+            result = await asyncio.to_thread(ml_service.predict_face, image_bytes)
             if result["label"] not in ("unavailable", "error", "no_face_detected"):
                 emotions["face"] = result
                 modalities_used.append("face")

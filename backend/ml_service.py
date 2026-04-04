@@ -118,7 +118,7 @@ class MLService:
         Returns: {"label": str, "confidence": float}
         """
         if not self.text_model or not self.text_tokenizer:
-            return {"label": "STRESS DETECTED", "confidence": 0.85}
+            return {"label": "unavailable", "confidence": 0.0}
 
         import numpy as np
         import tensorflow as tf
@@ -142,7 +142,7 @@ class MLService:
         Returns: {"label": str, "confidence": float} or error dict.
         """
         if not self.fer_model:
-            return {"label": "Stressed", "confidence": 0.90}
+            return {"label": "unavailable", "confidence": 0.0}
 
         import numpy as np
         import cv2
@@ -182,7 +182,7 @@ class MLService:
         Steps: load audio → resample 16 kHz → pad/truncate to 80 000 → normalize → TFLite.
         """
         if not self.voice_interpreter:
-            return {"label": "High Stress", "confidence": 0.88}
+            return {"label": "unavailable", "confidence": 0.0}
 
         try:
             import numpy as np
