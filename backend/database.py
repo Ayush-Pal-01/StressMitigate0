@@ -8,6 +8,9 @@ and logs a warning. Endpoints that need the DB will return 503.
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
 from backend.config import MONGO_URI, MONGO_DB_NAME
+from backend.logger import get_logger
+
+logger = get_logger(__name__)
 
 client: AsyncIOMotorClient = None
 db = None
@@ -29,12 +32,12 @@ async def connect_db():
         await db.conversations.create_index([("user_id", 1), ("session_id", 1)])
 
         _connected = True
-        print("✅ MongoDB connected & indexes ensured.")
+        logger.info("MongoDB connected & indexes ensured.")
         return db
     except Exception as e:
-        print(f"⚠️  MongoDB connection failed: {e}")
-        print("   The server will start, but auth/data endpoints will return 503.")
-        print("   Start MongoDB and restart the server when ready.")
+        logger.warning(f"MongoDB connection failed: {e}")
+        logger.warning("The server will start, but auth/data endpoints will return 503.")
+        logger.warning("Start MongoDB and restart the server when ready.")
         _connected = False
         return None
 
@@ -44,7 +47,7 @@ async def close_db():
     global client
     if client:
         client.close()
-        print("🛑 MongoDB connection closed.")
+        logger.info("MongoDB connection closed.")
 
 
 def get_db():

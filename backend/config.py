@@ -17,6 +17,7 @@ MODELS_DIR = BASE_DIR / "models" / "Models"
 # ---------- Model Paths ----------
 # FSM: MobileNetV2, 64×64 RGB, 3 classes (High Stress, Low Stress, No Stress)
 FSM_MODEL_PATH = str(MODELS_DIR / "FSM" / "fine_tuned_stress_model.keras")
+FSM_TFLITE_PATH = str(MODELS_DIR / "FSM" / "face_stress.tflite")  # Quantized alternative
 FSM_IMG_SIZE = (64, 64)
 FSM_CLASSES = ["High Stress", "Low Stress", "No Stress"]
 
@@ -29,6 +30,7 @@ VSM_CLASSES = ["No Stress", "Low Stress", "High Stress"]
 
 # Text: BertForSequenceClassification, tokenizer + tf_model.h5, 2 classes
 TEXT_MODEL_DIR = str(MODELS_DIR / "saved_stress_model")
+TEXT_ONNX_PATH = str(MODELS_DIR / "saved_stress_model" / "model_quantized.onnx")  # Quantized alternative
 TEXT_CLASSES = ["No Stress", "STRESS DETECTED"]
 TEXT_MAX_LEN = 128
 

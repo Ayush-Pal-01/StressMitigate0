@@ -8,34 +8,65 @@ Corrected architecture based on actual model analysis:
 
 CRITICAL FIX: The voice model expects RAW WAVEFORMS, not MFCCs.
 
+Quantized model support:
+  • Text: Prefers ONNX INT8 model if available, falls back to TF BERT
+  • Face: Prefers TFLite model if available, falls back to full Keras
+
 All heavy ML imports are LAZY — server starts even if TF isn't installed.
 """
 import io
 import os
 
 from backend.config import (
-    FSM_MODEL_PATH, FSM_IMG_SIZE, FSM_CLASSES,
+    FSM_MODEL_PATH, FSM_TFLITE_PATH, FSM_IMG_SIZE, FSM_CLASSES,
     VSM_MODEL_PATH, VSM_SAMPLE_RATE, VSM_TARGET_LEN, VSM_CLASSES,
-    TEXT_MODEL_DIR, TEXT_CLASSES, TEXT_MAX_LEN,
+    TEXT_MODEL_DIR, TEXT_ONNX_PATH, TEXT_CLASSES, TEXT_MAX_LEN,
 )
+from backend.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class MLService:
     """Holds all three ML models after async initialization."""
 
     def __init__(self):
-        self.fer_model = None         # Face
+        self.fer_model = None         # Face (Keras — legacy)
+        self.fer_interpreter = None   # Face (TFLite — preferred)
         self.voice_interpreter = None  # Voice (TFLite)
         self.text_tokenizer = None    # Text tokenizer
-        self.text_model = None        # Text model
+        self.text_model = None        # Text model (TF — legacy)
+        self.text_onnx_session = None # Text model (ONNX — preferred)
         self.face_cascade = None      # Haar Cascade for face detection
+        self._use_onnx_text = False   # Flag: using ONNX for text?
+        self._use_tflite_face = False # Flag: using TFLite for face?
 
     # ═══════════════════════════════════════════════
     #  MODEL LOADING (called in lifespan)
     # ═══════════════════════════════════════════════
 
     def load_face_model(self):
-        """Load FSM: MobileNetV2 fine-tuned stress classifier."""
+        """Load FSM: Prefer TFLite, fall back to Keras MobileNetV2."""
+        # Try TFLite first (quantized, faster)
+        if os.path.exists(FSM_TFLITE_PATH):
+            try:
+                import tensorflow as tf
+                interpreter = tf.lite.Interpreter(model_path=FSM_TFLITE_PATH)
+                interpreter.allocate_tensors()
+                self.fer_interpreter = interpreter
+                self._use_tflite_face = True
+
+                # Still need Haar Cascade for face detection
+                import cv2
+                cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+
+                logger.info("Face Stress Model (TFLite — quantized) loaded.")
+                return
+            except Exception as e:
+                logger.warning(f"TFLite face model failed, trying Keras: {e}")
+
+        # Fall back to full Keras model
         try:
             import numpy as np
             import cv2
@@ -47,7 +78,7 @@ class MLService:
             from tensorflow.keras.models import Sequential
 
             if not os.path.exists(FSM_MODEL_PATH):
-                print(f"⚠️  FSM model file not found: {FSM_MODEL_PATH}")
+                logger.warning(f"FSM model file not found: {FSM_MODEL_PATH}")
                 return
 
             # Rebuild architecture to match training
@@ -68,11 +99,11 @@ class MLService:
             cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
             self.face_cascade = cv2.CascadeClassifier(cascade_path)
 
-            print("✅ Face Stress Model (MobileNetV2) loaded.")
+            logger.info("Face Stress Model (MobileNetV2 — Keras) loaded.")
         except ImportError as ie:
-            print(f"⚠️  FSM skipped — missing dependency: {ie}")
+            logger.warning(f"FSM skipped — missing dependency: {ie}")
         except Exception as e:
-            print(f"⚠️  FSM load failed: {e}")
+            logger.error(f"FSM load failed: {e}")
 
     def load_voice_model(self):
         """Load VSM: Wav2Vec2 fine-tuned TFLite interpreter."""
@@ -80,33 +111,50 @@ class MLService:
             import tensorflow as tf
 
             if not os.path.exists(VSM_MODEL_PATH):
-                print(f"⚠️  VSM model file not found: {VSM_MODEL_PATH}")
+                logger.warning(f"VSM model file not found: {VSM_MODEL_PATH}")
                 return
 
             interpreter = tf.lite.Interpreter(model_path=VSM_MODEL_PATH)
             interpreter.allocate_tensors()
             self.voice_interpreter = interpreter
-            print("✅ Voice Stress Model (TFLite) loaded.")
+            logger.info("Voice Stress Model (TFLite) loaded.")
         except ImportError as ie:
-            print(f"⚠️  VSM skipped — missing dependency: {ie}")
+            logger.warning(f"VSM skipped — missing dependency: {ie}")
         except Exception as e:
-            print(f"⚠️  VSM load failed: {e}")
+            logger.error(f"VSM load failed: {e}")
 
     def load_text_model(self):
-        """Load Text: BertForSequenceClassification + BertTokenizer."""
+        """Load Text: Prefer ONNX INT8, fall back to TF BERT."""
+        # Try ONNX first (quantized, faster, smaller)
+        if os.path.exists(TEXT_ONNX_PATH):
+            try:
+                import onnxruntime as ort
+                from transformers import BertTokenizer
+
+                self.text_onnx_session = ort.InferenceSession(TEXT_ONNX_PATH)
+                self.text_tokenizer = BertTokenizer.from_pretrained(TEXT_MODEL_DIR)
+                self._use_onnx_text = True
+                logger.info("Text Stress Model (ONNX INT8 — quantized) loaded.")
+                return
+            except ImportError:
+                logger.warning("onnxruntime not installed, falling back to TF BERT.")
+            except Exception as e:
+                logger.warning(f"ONNX text model failed, trying TF BERT: {e}")
+
+        # Fall back to TF BERT
         try:
             if not os.path.exists(os.path.join(TEXT_MODEL_DIR, "tf_model.h5")):
-                print(f"⚠️  Text model file not found in: {TEXT_MODEL_DIR}")
+                logger.warning(f"Text model file not found in: {TEXT_MODEL_DIR}")
                 return
 
             from transformers import BertTokenizer, TFBertForSequenceClassification
             self.text_tokenizer = BertTokenizer.from_pretrained(TEXT_MODEL_DIR)
             self.text_model = TFBertForSequenceClassification.from_pretrained(TEXT_MODEL_DIR)
-            print("✅ Text Stress Model (BERT) loaded.")
+            logger.info("Text Stress Model (BERT — TF) loaded.")
         except ImportError as ie:
-            print(f"⚠️  Text model skipped — missing dependency: {ie}")
+            logger.warning(f"Text model skipped — missing dependency: {ie}")
         except Exception as e:
-            print(f"⚠️  Text model load failed: {e}")
+            logger.error(f"Text model load failed: {e}")
 
     # ═══════════════════════════════════════════════
     #  INFERENCE METHODS
@@ -114,12 +162,56 @@ class MLService:
 
     def predict_text(self, text: str) -> dict:
         """
-        Run BERT text stress classification.
+        Run text stress classification.
+        Prefers ONNX if available, falls back to TF BERT.
         Returns: {"label": str, "confidence": float}
         """
-        if not self.text_model or not self.text_tokenizer:
-            return {"label": "unavailable", "confidence": 0.0}
+        # ONNX path
+        if self._use_onnx_text and self.text_onnx_session and self.text_tokenizer:
+            return self._predict_text_onnx(text)
 
+        # TF BERT path
+        if self.text_model and self.text_tokenizer:
+            return self._predict_text_tf(text)
+
+        return {"label": "unavailable", "confidence": 0.0}
+
+    def _predict_text_onnx(self, text: str) -> dict:
+        """ONNX Runtime inference for text classification."""
+        import numpy as np
+
+        tokens = self.text_tokenizer(
+            text,
+            return_tensors="np",
+            truncation=True,
+            padding="max_length",
+            max_length=TEXT_MAX_LEN,
+        )
+
+        # Build feed dict matching ONNX input names
+        session = self.text_onnx_session
+        input_names = [inp.name for inp in session.get_inputs()]
+        feed = {}
+        for name in input_names:
+            if "input_ids" in name:
+                feed[name] = tokens["input_ids"].astype(np.int32)
+            elif "attention_mask" in name:
+                feed[name] = tokens["attention_mask"].astype(np.int32)
+            elif "token_type_ids" in name:
+                feed[name] = tokens["token_type_ids"].astype(np.int32)
+
+        outputs = session.run(None, feed)
+        logits = outputs[0][0]
+
+        # Softmax
+        exp_logits = np.exp(logits - np.max(logits))
+        probs = exp_logits / np.sum(exp_logits)
+
+        idx = int(np.argmax(probs))
+        return {"label": TEXT_CLASSES[idx], "confidence": float(probs[idx])}
+
+    def _predict_text_tf(self, text: str) -> dict:
+        """TensorFlow BERT inference for text classification."""
         import numpy as np
         import tensorflow as tf
 
@@ -141,7 +233,7 @@ class MLService:
         Steps: decode → detect face (Haar) → resize 64×64 → normalize → predict.
         Returns: {"label": str, "confidence": float} or error dict.
         """
-        if not self.fer_model:
+        if not self.fer_model and not self.fer_interpreter:
             return {"label": "unavailable", "confidence": 0.0}
 
         import numpy as np
@@ -170,9 +262,34 @@ class MLService:
         normalized = resized / 255.0
         tensor = np.expand_dims(normalized, axis=0).astype(np.float32)
 
+        # TFLite path (preferred)
+        if self._use_tflite_face and self.fer_interpreter:
+            return self._predict_face_tflite(tensor)
+
+        # Keras path (legacy)
         preds = self.fer_model.predict(tensor, verbose=0)
         idx = int(np.argmax(preds))
         return {"label": FSM_CLASSES[idx], "confidence": float(np.max(preds))}
+
+    def _predict_face_tflite(self, tensor) -> dict:
+        """TFLite inference for face stress classification."""
+        import numpy as np
+
+        interpreter = self.fer_interpreter
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        # Resize input tensor if needed
+        if list(input_details[0]["shape"]) != list(tensor.shape):
+            interpreter.resize_tensor_input(input_details[0]["index"], tensor.shape)
+            interpreter.allocate_tensors()
+
+        interpreter.set_tensor(input_details[0]["index"], tensor)
+        interpreter.invoke()
+        preds = interpreter.get_tensor(output_details[0]["index"])[0]
+
+        idx = int(np.argmax(preds))
+        return {"label": FSM_CLASSES[idx], "confidence": float(preds[idx])}
 
     def predict_voice(self, audio_bytes: bytes) -> dict:
         """

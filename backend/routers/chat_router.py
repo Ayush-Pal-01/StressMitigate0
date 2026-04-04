@@ -20,6 +20,9 @@ from backend.auth import get_current_user
 from backend.ml_service import ml_service
 from backend.brain import generate_response
 from backend.database import get_db
+from backend.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat (Multimodal)"])
 
@@ -166,9 +169,9 @@ async def chat_message(
         cursor = db.conversations.find(
             {"user_id": user_id, "session_id": session_id},
             {"message_payload": 1, "ai_response": 1, "_id": 0},
-        ).sort("timestamp", -1).limit(5)
+        ).sort("timestamp", -1).limit(10)
 
-        recent_messages = await cursor.to_list(length=5)
+        recent_messages = await cursor.to_list(length=10)
         # Reverse to get chronological order
         for msg in reversed(recent_messages):
             if msg.get("message_payload"):
@@ -176,7 +179,7 @@ async def chat_message(
             if msg.get("ai_response"):
                 chat_history.append({"role": "model", "text": msg["ai_response"]})
     except Exception as e:
-        print(f"⚠️ Could not fetch chat history: {e}")
+        logger.warning(f"Could not fetch chat history: {e}")
 
     # ─── Brain Pipeline: Fusion → Gemini (with context) ───
     ai_response = await generate_response(
