@@ -43,8 +43,8 @@ JWT_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 # ---------- Gemini ----------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.0-flash"
-GEMINI_FALLBACK_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 # ---------- CORS ----------
 CORS_ORIGINS = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5500", "*"]

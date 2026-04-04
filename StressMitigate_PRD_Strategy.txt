@@ -1,0 +1,450 @@
+================================================================================
+  STRESSMITIGATE — PROFESSIONAL UPGRADE PRD & STRATEGY DOCUMENT
+  Version: 2.0 (Post-Audit Revision)
+  Generated: 2026-04-04
+  Last Audited Against: All source files in StressMitigate0/
+================================================================================
+
+
+================================================================================
+ 1. EXECUTIVE SUMMARY
+================================================================================
+
+StressMitigate is an AI-powered mental health companion that detects emotional
+stress through three modalities (Text/BERT, Voice/Wav2Vec2, Face/MobileNetV2),
+fuses them, and generates empathetic responses via Google Gemini.
+
+The application has grown beyond the prototype stage. It currently has:
+  ✅ Working auth (register/login with JWT + bcrypt, email normalized)
+  ✅ Multimodal chat (text, voice, face — all 8 hybrid cases handled)
+  ✅ Conversation memory (brain.py uses start_chat with last 5 messages)
+  ✅ 3-tier text stress classification (No/Low/High threshold logic)
+  ✅ Wellness score engine (daily score + 7-day rolling average)
+  ✅ Weekly report generation, recommendations, stress trigger analysis
+  ✅ Breathing exercise widget
+  ✅ Settings modals (profile edit, password change, privacy sync)
+  ✅ Gemini retry with model fallback (gemini-2.5-flash → gemini-3.1-flash-lite)
+  ✅ Check-in BERT analysis (checkin_router runs predict_text on notes)
+  ✅ Chart.js wellness trend chart (30-day history)
+
+This PRD defines what remains to transform it into a **production-grade,
+professionally deployable** application.
+
+
+================================================================================
+ 2. CURRENT STATE AUDIT — WHAT ALREADY WORKS vs. WHAT DOESN'T
+================================================================================
+
+── A. THINGS ALREADY RESOLVED (DO NOT RE-IMPLEMENT) ──
+
+  ✅ BUG 1 (Email case-sensitivity): FIXED — auth_router uses .strip().lower()
+  ✅ BUG 2 (Password toggle): FIXED — togglePasswordVisibility() exists
+  ✅ BUG 3 (Password clear on error): FIXED — login-password cleared in catch
+  ✅ BUG 5 (Dashboard mood silent): FIXED — submitDashMoodCheckin() with UI
+  ✅ BUG 7 (Check-in no animation): FIXED — showCheckinSuccess() with redirect
+  ✅ BUG 8 (Check-in no BERT): FIXED — checkin_router runs BERT on notes
+  ✅ BUG 10 (Low Stress missing): FIXED — _classify_text_stress() in chat_router
+  ✅ BUG 11 (Voice no feedback): FIXED — Recording duration shown
+  ✅ BUG 12 (Camera fire-and-forget): FIXED — "Face captured" message shown
+  ✅ BUG 13 (Privacy UI-only): FIXED — syncPrivacyToBackend() syncs to API
+  ✅ BUG 14 (No conversation memory): FIXED — chat_router fetches last 5,
+       brain.py uses start_chat(history=[...])
+  ✅ BUG 15 (Settings unimplemented): FIXED — Modals for profile, security,
+       privacy all functional
+
+  ✅ Suggestion 5 (Wellness Score): DONE — wellness_router with full calc
+  ✅ Suggestion 6 (Breathing): DONE — startBreathing()/stopBreathing()
+  ✅ Suggestion 12 (Context Window): DONE — session_id + MongoDB history fetch
+  ✅ Suggestion 18 (Trend Chart): DONE — Chart.js with 30-day history
+  ✅ Suggestion 19 (Weekly Report): DONE — Plain-text downloadable report
+  ✅ Suggestion 20 (Psychiatrist Rec): DONE — urgency=high triggers helplines
+  ✅ Suggestion 21 (Trigger Analysis): DONE — Time-of-day bucket analysis
+  ✅ Suggestion 22 (Gemini Chat Interface): DONE — start_chat with history
+  ✅ Suggestion 25 (Rate Limiting): PARTIALLY — retry + fallback model exists
+       (but no per-user request rate limiting yet)
+
+
+── B. REMAINING BUGS & GAPS ──
+
+  ❌ BUG 4: Wellness score ring still has hardcoded fallback style in HTML
+            (CSS --score:72 in the template). The JS updates it dynamically,
+            but the HTML initial state should show "--" for new users.
+
+  ❌ BUG 6: Sleep Sound button STILL has no handler. No sleep sound feature.
+
+  ❌ BUG 9: Gemini API key exposed in .env in repo. GEMINI_API_KEY is committed
+            to source. .gitignore may not exclude .env (VERIFY!).
+
+  ❌ BUG 16: No Exercise tab in bottom navigation. Only 4 tabs exist.
+
+  ❌ CRITICAL: ml_service.py returns FAKE hardcoded results when models fail to
+     load (e.g., predict_text returns "STRESS DETECTED" at 0.85 confidence,
+     predict_face returns "Stressed" at 0.90). These fake results are
+     indistinguishable from real predictions and will produce MISLEADING
+     clinical-adjacent outputs. This MUST be fixed to return "unavailable".
+
+  ❌ CORS is wide open (["*"] in the origins list). Must be locked down.
+
+  ❌ No input sanitization on file uploads (no MIME-type or size checks).
+
+  ❌ No request rate limiting per user (only Gemini retry exists).
+
+  ❌ Synchronous ML inference blocks the FastAPI event loop.
+
+  ❌ ML models are massive: BERT ~438MB, Wav2Vec2 weights ~408MB.
+
+
+================================================================================
+ 3. VERIFIED & APPROVED UPGRADES
+================================================================================
+
+── A. MACHINE LEARNING & INFERENCE OPTIMIZATION ──
+VERDICT: APPROVED & CRITICAL
+Priority: HIGH
+
+  1. BERT → ONNX + INT8 Quantization
+     - Current: tf_model.h5 at 438MB, loaded via TFBertForSequenceClassification
+     - Target: ONNX INT8 model at ~100MB, loaded via onnxruntime
+     - Why: 4x size reduction, 2-3x inference speedup on CPU
+     - Script needed: convert_bert_onnx.py (export TF → ONNX → quantize INT8)
+     - ml_service.py: Add new predict_text_onnx() method alongside existing
+
+  2. MobileNetV2 (.keras) → TFLite
+     - Current: fine_tuned_stress_model.keras at ~26MB via full TensorFlow
+     - Target: TFLite model at ~10MB via tf.lite.Interpreter
+     - Why: Unifies inference pipeline (Voice already uses TFLite),
+       removes need to load full TensorFlow for face model
+     - Script needed: convert_face_tflite.py
+
+  3. Decoupled Inference (Non-Blocking)
+     - PHASE 1 (immediate): Wrap all predict_*() calls in asyncio.to_thread()
+       in chat_router.py and checkin_router.py
+     - PHASE 3 (infra): Move to Celery + Redis worker queue for full decoupling
+
+  4. Fix Fake Fallback Predictions
+     - predict_text() line 121: returns hardcoded STRESS DETECTED when model
+       missing — MUST return {"label": "unavailable"} instead
+     - predict_face() line 145: returns hardcoded "Stressed" — same fix
+     - predict_voice() line 185: returns hardcoded "High Stress" — same fix
+
+
+── B. BACKEND ARCHITECTURE & INFRASTRUCTURE ──
+VERDICT: APPROVED & ESSENTIAL
+Priority: HIGH
+
+  1. Containerization (Docker)
+     - Dockerfile for FastAPI backend (multi-stage: build deps, then slim runtime)
+     - docker-compose.yml: fastapi + mongodb + redis
+     - .dockerignore to exclude venv/, env/, __pycache__/, .git/, models/Models/
+
+  2. Redis Integration
+     - Caching: wellness_score (TTL 5 min), user preferences (TTL 10 min)
+     - fastapi-limiter: /auth/login 5/min, /chat/message 30/min, /analyze/* 20/min
+     - Session store for Celery task results
+
+  3. Structured Logging & APM
+     - Replace all print() calls with Python logging module (JSON format)
+     - Sentry integration for error tracking (Gemini failures, ML exceptions)
+     - Log ML inference times for performance monitoring
+
+  4. CORS Lockdown
+     - Remove wildcard "*" from CORS_ORIGINS in config.py
+     - Only allow explicit frontend origins
+
+  5. Environment Security
+     - Verify .env is in .gitignore (currently committed with API key!)
+     - Add .env.example with placeholder values
+     - Rotate exposed GEMINI_API_KEY
+
+
+── C. AI PIPELINE UPGRADES ──
+VERDICT: ALREADY PARTIALLY DONE — ENHANCE
+Priority: MEDIUM
+
+  1. Conversation Memory — ALREADY IMPLEMENTED ✅
+     - brain.py already uses start_chat(history=[...])
+     - chat_router.py already fetches last 5 messages per session_id
+     - ENHANCEMENT: Increase window to 10 messages, add summary compression
+       for long sessions (Gemini-summarize old context periodically)
+
+  2. Resiliency — PARTIALLY DONE, NEEDS TENACITY
+     - Current: Manual retry with asyncio.sleep(2) and fallback model
+     - Target: Use tenacity library for exponential backoff, circuit breaker
+     - Add: timeout parameter on Gemini calls (max 15s)
+     - Add: Separate error handling for auth errors vs. rate limits vs. timeouts
+
+  3. Gemini Streaming (Future — Phase 4)
+     - Use Gemini's streaming API to deliver tokens progressively
+     - Pairs with WebSocket frontend for real-time display
+
+
+── D. FRONTEND ARCHITECTURE ──
+VERDICT: APPROVED — PHASED APPROACH
+Priority: LOW-MEDIUM (Phase 4)
+
+  1. Current State: 872-line app.js manages auth, chat, media recording,
+     wellness charts, settings modals, breathing exercises — all in vanilla JS.
+     It works but will become unmaintainable as features grow.
+
+  2. Framework Migration (Phase 4): React with Vite
+     - Why React over Next.js: This is an SPA talking to a FastAPI backend.
+       SSR is unnecessary. Vite + React is lighter and simpler.
+     - Component decomposition: Auth, Dashboard, CheckIn, Chat, Profile, Charts
+     - State: React Context or Zustand for JWT/user/session state
+
+  3. WebSocket Integration (Phase 4)
+     - FastAPI WebSocket endpoint for:
+       * Real-time Gemini token streaming
+       * Live emotion analysis progress indicators
+       * Typing indicators
+     - Replaces polling-based wellness score updates
+
+  4. Accessibility (NEW — not in original spec)
+     - ARIA labels on all interactive elements
+     - Keyboard navigation for mood selection, chat, settings
+     - Screen reader support for emotion insights
+     - Color contrast compliance (WCAG 2.1 AA)
+
+
+── E. SECURITY & DATA COMPLIANCE ──
+VERDICT: APPROVED & MANDATORY
+Priority: HIGH
+
+  1. File Upload Validation
+     - Audio: Only accept audio/webm, audio/wav, audio/mp3 — max 10MB
+     - Image: Only accept image/jpeg, image/png — max 5MB
+     - Reject everything else with 415 Unsupported Media Type
+
+  2. MongoDB Encryption at Rest
+     - Enable MongoDB Enterprise encryption or use mongocryptd
+     - Encrypt conversations and checkins collections
+     - Index on user_id remains unencrypted for query performance
+
+  3. Media Purge Policy
+     - Audio/image bytes MUST be purged from memory immediately after inference
+     - NEVER persist raw audio/video to disk or database
+     - Only store emotion labels and confidence scores
+
+  4. JWT Hardening
+     - Move JWT_SECRET to a proper secret manager (or at minimum, a strong
+       randomly generated key — current one is a readable string)
+     - Consider refresh token rotation for sessions > 24h
+
+  5. Input Sanitization
+     - Sanitize user text before sending to Gemini (prevent prompt injection)
+     - Sanitize display_name and optional_notes for XSS
+
+
+================================================================================
+ 4. ADDITIONAL STRATEGIC RECOMMENDATIONS (NEW)
+================================================================================
+
+  A. Automated Testing & CI/CD
+     - pytest for backend: unit tests for auth, ml_service, brain, wellness
+     - pytest-asyncio for async route testing
+     - GitHub Actions CI: lint (ruff/black), test, type-check (mypy)
+     - Pre-commit hooks for code formatting
+
+  B. API Versioning & Documentation
+     - Current: /api/v1/* — good, maintain this pattern
+     - Auto-generated OpenAPI docs already available at /docs (FastAPI default)
+     - Add: API changelog tracking for version bumps
+
+  C. Offline/Degraded Mode
+     - If MongoDB is down: serve cached wellness data, allow chat with Gemini only
+     - If Gemini is down: provide local coping suggestions from a static database
+     - If ML models fail: clearly indicate "analysis unavailable" — NEVER fake data
+
+  D. Product Analytics (Optional, Post-MVP)
+     - PostHog or Mixpanel for anonymized user funnels
+     - Track: onboarding completion rate, feature usage, drop-off points
+
+  E. Health Check Enhancement
+     - Current /health only checks model loaded (not null)
+     - Add: MongoDB ping, Gemini API ping (lightweight), memory usage, uptime
+
+  F. Legacy Cleanup
+     - Delete app.py (deprecated, not used by main.py)
+     - Delete Requirement.txt (duplicate of requirements.txt)
+     - Delete models/text_model.py (unused legacy DistilBERT)
+     - Remove finetuned_best.weights.h5 from repo (~408MB, unused by inference
+       — only .tflite is used at runtime)
+
+
+================================================================================
+ 5. PHASED IMPLEMENTATION STRATEGY
+================================================================================
+
+We approach this in 4 phases. Each phase is independently deployable and
+testable. No phase breaks the existing working functionality.
+
+
+── PHASE 1: STABILIZATION & ML OPTIMIZATION ──
+Timeline: ~2-3 days
+Goal: Fix critical bugs, optimize models, unblock the event loop.
+
+  Tasks:
+  1.1  Fix fake ML fallback predictions (return "unavailable" instead of
+       hardcoded stress labels when models aren't loaded)
+  1.2  Write convert_bert_onnx.py — export BERT to ONNX, apply INT8 quantization
+  1.3  Write convert_face_tflite.py — convert MobileNetV2 .keras → .tflite
+  1.4  Update ml_service.py to load quantized ONNX and TFLite models
+  1.5  Wrap all predict_*() calls in asyncio.to_thread() in chat_router.py
+       and checkin_router.py
+  1.6  Add file upload MIME-type and size validation to chat_router.py
+  1.7  Fix CORS (remove "*", keep only explicit origins)
+  1.8  Verify .env is in .gitignore, create .env.example, rotate API key
+  1.9  Delete legacy files: app.py, Requirement.txt, models/text_model.py
+  1.10 Benchmark: Compare model size and inference time before/after
+
+  Verification:
+  - Run server, send chat message → verify non-blocking response
+  - Confirm ONNX model loads and produces same output as original BERT
+  - Confirm TFLite face model produces same output as original .keras
+  - File upload with .exe extension → verify 415 rejection
+
+
+── PHASE 2: RESILIENCY, LOGGING & CONTEXT ENHANCEMENT ──
+Timeline: ~2-3 days
+Goal: Make the system robust against failures and improve AI quality.
+
+  Tasks:
+  2.1  Install tenacity; refactor brain.py retry logic with exponential backoff
+       and circuit breaker pattern
+  2.2  Replace all print() statements with structured Python logging (JSON)
+  2.3  Add Sentry SDK integration for error tracking
+  2.4  Enhance conversation memory: increase window to 10 messages, add session
+       summary compression for long conversations
+  2.5  Add prompt injection sanitization for user text → Gemini
+  2.6  Harden JWT: generate cryptographically random secret, add to .env.example
+  2.7  Enhance /health endpoint: add MongoDB ping, Gemini check, memory stats
+  2.8  Add Sleep Sound placeholder (or remove the button from UI)
+  2.9  Fix HTML initial wellness score (show "--" instead of hardcoded 72)
+
+  Verification:
+  - Kill Gemini API → verify Tenacity retries and graceful fallback
+  - Check Sentry dashboard for captured errors
+  - Send 15 messages in a session → verify context window works correctly
+  - Inspect logs → verify JSON format with timestamps and levels
+
+
+── PHASE 3: INFRASTRUCTURE & CONTAINERIZATION ──
+Timeline: ~2-3 days
+Goal: Docker, Redis, Celery, rate limiting — production-ready infra.
+
+  Tasks:
+  3.1  Create Dockerfile (multi-stage: poetry/pip install → slim runtime)
+  3.2  Create docker-compose.yml (services: api, mongodb, redis)
+  3.3  Create .dockerignore
+  3.4  Install redis, fastapi-limiter; add rate limiting middleware
+  3.5  Add Redis caching for wellness scores and user preferences
+  3.6  Install celery; create celery worker for ML inference tasks
+  3.7  Update chat_router.py to offload inference to Celery tasks
+  3.8  Add pytest test suite: auth, chat, wellness, ml_service
+  3.9  Create GitHub Actions CI workflow (.github/workflows/ci.yml)
+  3.10 Enable MongoDB encryption at rest (configuration)
+
+  Verification:
+  - docker-compose up → entire stack runs
+  - Rate limit: hit /auth/login 6 times in 1 minute → verify 429 on 6th
+  - Run pytest → all tests pass
+  - CI pipeline runs on push → green checkmark
+
+
+── PHASE 4: FRONTEND MODERNIZATION & REAL-TIME ──
+Timeline: ~5-7 days
+Goal: Migrate to React, add WebSocket streaming, polish UX.
+
+  Tasks:
+  4.1  Initialize React project with Vite in /frontend directory
+  4.2  Decompose into components: Auth, Dashboard, CheckIn, Chat, Profile
+  4.3  Implement React Context/Zustand for global state (JWT, user, session)
+  4.4  Add WebSocket endpoint in FastAPI for real-time chat streaming
+  4.5  Implement Gemini streaming API integration in brain.py
+  4.6  Connect React Chat component to WebSocket for token-by-token display
+  4.7  Add ARIA labels, keyboard navigation, WCAG 2.1 AA compliance
+  4.8  Add dark/light mode toggle (CSS custom properties)
+  4.9  Replace Chart.js with a React-native charting library (Recharts)
+  4.10 End-to-end testing with Playwright
+
+  Verification:
+  - Full user flow: register → check-in → chat → view wellness → download report
+  - WebSocket chat: send message → see tokens appear progressively
+  - Lighthouse score ≥ 90 for Performance, Accessibility, Best Practices
+  - Playwright tests pass in CI
+
+
+================================================================================
+ 6. RISK MATRIX
+================================================================================
+
+  Risk                          Impact    Likelihood   Mitigation
+  ─────────────────────────────────────────────────────────────────────────
+  ONNX conversion breaks        HIGH      LOW          Keep original .h5 as
+  model accuracy                                       fallback; validate on
+                                                       test set before swap
+
+  Celery adds complexity         MED       MED          Start with to_thread(),
+  without enough traffic                               migrate to Celery only
+                                                       when needed
+
+  React migration breaks         HIGH      MED          Keep old frontend
+  existing features                                    working alongside new;
+                                                       feature-flag switchover
+
+  Gemini API deprecation         MED       LOW          Abstract LLM behind
+  (model names change)                                 interface; easy to swap
+
+  MongoDB encryption slows       LOW       MED          Benchmark; only encrypt
+  hot-path queries                                     sensitive collections
+
+  Exposed API key in git         HIGH      CONFIRMED    Rotate immediately;
+  history                                              add to .gitignore
+
+
+================================================================================
+ 7. DEPENDENCY ADDITIONS (requirements.txt updates)
+================================================================================
+
+  Phase 1:
+    onnxruntime>=1.17.0           # ONNX inference
+    tf2onnx>=1.16.0               # TF→ONNX conversion (conversion script only)
+
+  Phase 2:
+    tenacity>=8.2.0               # Retry with exponential backoff
+    sentry-sdk[fastapi]>=2.0.0    # Error tracking
+
+  Phase 3:
+    redis>=5.0.0                  # Redis client
+    fastapi-limiter>=0.1.6        # Rate limiting
+    celery[redis]>=5.3.0          # Task queue
+    pytest>=8.0.0                 # Testing
+    pytest-asyncio>=0.23.0        # Async test support
+    httpx>=0.27.0                 # Test client for FastAPI
+
+  Phase 4:
+    websockets>=12.0              # WebSocket support (FastAPI built-in)
+
+
+================================================================================
+ 8. SUCCESS METRICS
+================================================================================
+
+  Metric                          Current         Target
+  ─────────────────────────────────────────────────────────────
+  BERT model size                 438 MB          < 110 MB (ONNX INT8)
+  Face model size                 26 MB           < 12 MB (TFLite)
+  Chat response latency           ~3-5s           < 2s (P95)
+  Event loop blocking             YES             NO (async inference)
+  Fake ML predictions on failure  YES             NO (returns "unavailable")
+  File upload validation          NONE            MIME + size enforced
+  Rate limiting                   NONE            Per-user limits active
+  Test coverage                   0%              > 60% (backend)
+  Docker deployment               NONE            One-command compose up
+  CORS policy                     Wildcard *      Explicit origins only
+  API key in git                  EXPOSED         Rotated + .gitignore'd
+
+
+================================================================================
+  END OF DOCUMENT
+================================================================================
