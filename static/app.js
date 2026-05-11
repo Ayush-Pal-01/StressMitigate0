@@ -2,7 +2,7 @@
    StressMitigate — Frontend Application Logic
    ═══════════════════════════════════════════ */
 
-const API = 'http://localhost:8000/api/v1';
+const API = '/api/v1';
 let token = localStorage.getItem('sm_token');
 let currentUser = JSON.parse(localStorage.getItem('sm_user') || 'null');
 let sessionCount = parseInt(localStorage.getItem('sm_sessions') || '0');

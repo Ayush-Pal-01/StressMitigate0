@@ -1,17 +1,15 @@
 """
 convert_bert_onnx.py — Convert TF BERT stress model to ONNX + INT8 quantization.
 
+Strategy: Use tf2onnx.convert.from_function() on a concrete function
+from the TF BERT model. This avoids SavedModel file locking issues on
+Windows and handles GELU activation properly with opset 15+.
+
 Usage:
     python scripts/convert_bert_onnx.py
 
 Requirements:
-    pip install tf2onnx onnxruntime onnx onnxruntime-extensions
-
-Input:  models/Models/saved_stress_model/tf_model.h5
-Output: models/Models/saved_stress_model/model_quantized.onnx
-
-Expected size reduction: ~438MB → ~100MB
-Expected speedup: 2-3x on CPU inference
+    pip install tf2onnx onnxruntime onnx transformers tensorflow
 """
 import os
 import sys
@@ -22,46 +20,58 @@ import numpy as np
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "Models", "saved_stress_model")
-TF_MODEL_PATH = os.path.join(MODEL_DIR, "tf_model.h5")
 ONNX_OUTPUT_PATH = os.path.join(MODEL_DIR, "model.onnx")
 ONNX_QUANTIZED_PATH = os.path.join(MODEL_DIR, "model_quantized.onnx")
+MAX_LEN = 128
 
 
 def step1_export_to_onnx():
-    """Export TF BERT model to ONNX format."""
+    """Export TF BERT model to ONNX via tf2onnx from_function."""
     print("\n═══ Step 1: Export TF BERT → ONNX ═══")
 
-    if not os.path.exists(TF_MODEL_PATH):
-        print(f"❌ Model file not found: {TF_MODEL_PATH}")
-        print("   Make sure the BERT model weights are in the correct location.")
-        sys.exit(1)
-
-    print(f"   Loading model from: {TF_MODEL_PATH}")
-    from transformers import TFBertForSequenceClassification
-    model = TFBertForSequenceClassification.from_pretrained(MODEL_DIR)
-
-    print(f"   Converting to ONNX...")
-    import tf2onnx
     import tensorflow as tf
+    from transformers import TFBertForSequenceClassification
 
-    # Define input signature for BERT
-    input_spec = (
-        tf.TensorSpec((1, 128), tf.int32, name="input_ids"),
-        tf.TensorSpec((1, 128), tf.int32, name="attention_mask"),
-        tf.TensorSpec((1, 128), tf.int32, name="token_type_ids"),
-    )
+    print(f"   Loading TF BERT model from: {MODEL_DIR}")
+    model = TFBertForSequenceClassification.from_pretrained(MODEL_DIR)
+    print(f"   ✅ Model loaded.")
 
-    # Convert
-    model_proto, _ = tf2onnx.convert.from_keras(
-        model,
-        input_signature=input_spec,
-        opset=13,
+    # Create concrete function with explicit input signature
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='input_ids'),
+        tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='attention_mask'),
+        tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='token_type_ids'),
+    ])
+    def serve(input_ids, attention_mask, token_type_ids):
+        output = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            training=False,
+        )
+        return output.logits
+
+    # Convert using tf2onnx — pass the tf.function directly
+    print(f"   Converting to ONNX (opset 15 — supports Erf/GELU)...")
+    import tf2onnx
+
+    model_proto, _ = tf2onnx.convert.from_function(
+        serve,
+        opset=15,
         output_path=ONNX_OUTPUT_PATH,
+        input_signature=[
+            tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='input_ids'),
+            tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='attention_mask'),
+            tf.TensorSpec(shape=(None, MAX_LEN), dtype=tf.int32, name='token_type_ids'),
+        ],
     )
 
-    onnx_size = os.path.getsize(ONNX_OUTPUT_PATH) / (1024 * 1024)
-    print(f"   ✅ ONNX model saved: {ONNX_OUTPUT_PATH} ({onnx_size:.1f} MB)")
-    return ONNX_OUTPUT_PATH
+    if os.path.exists(ONNX_OUTPUT_PATH):
+        onnx_size = os.path.getsize(ONNX_OUTPUT_PATH) / (1024 * 1024)
+        print(f"   ✅ ONNX model saved: {ONNX_OUTPUT_PATH} ({onnx_size:.1f} MB)")
+    else:
+        print(f"   ❌ ONNX export failed.")
+        sys.exit(1)
 
 
 def step2_quantize_int8():
@@ -70,12 +80,7 @@ def step2_quantize_int8():
 
     from onnxruntime.quantization import quantize_dynamic, QuantType
 
-    if not os.path.exists(ONNX_OUTPUT_PATH):
-        print(f"❌ ONNX model not found: {ONNX_OUTPUT_PATH}")
-        print("   Run step 1 first.")
-        sys.exit(1)
-
-    print(f"   Quantizing {ONNX_OUTPUT_PATH}...")
+    print(f"   Quantizing...")
     quantize_dynamic(
         model_input=ONNX_OUTPUT_PATH,
         model_output=ONNX_QUANTIZED_PATH,
@@ -91,9 +96,14 @@ def step2_quantize_int8():
     print(f"   Size reduction:  {reduction:.1f}%")
     print(f"   ✅ Quantized model saved: {ONNX_QUANTIZED_PATH}")
 
+    # Clean up intermediate unquantized ONNX
+    if os.path.exists(ONNX_OUTPUT_PATH):
+        os.remove(ONNX_OUTPUT_PATH)
+        print(f"   Cleaned up intermediate model.onnx")
+
 
 def step3_validate():
-    """Validate quantized model produces same outputs as original."""
+    """Validate quantized model works correctly."""
     print("\n═══ Step 3: Validation ═══")
 
     from transformers import BertTokenizer
@@ -101,7 +111,6 @@ def step3_validate():
 
     tokenizer = BertTokenizer.from_pretrained(MODEL_DIR)
 
-    # Test sentences
     test_texts = [
         "I'm feeling really stressed about my exams",
         "Today was a wonderful day, I feel great",
@@ -110,7 +119,6 @@ def step3_validate():
         "I can't sleep, everything feels wrong",
     ]
 
-    # Load quantized ONNX model
     session = ort.InferenceSession(ONNX_QUANTIZED_PATH)
     input_names = [inp.name for inp in session.get_inputs()]
 
@@ -126,13 +134,11 @@ def step3_validate():
             return_tensors="np",
             truncation=True,
             padding="max_length",
-            max_length=128,
+            max_length=MAX_LEN,
         )
 
-        # Build feed dict matching ONNX input names
         feed = {}
         for name in input_names:
-            key = name.replace(".", "_")  # handle naming differences
             if "input_ids" in name:
                 feed[name] = tokens["input_ids"].astype(np.int32)
             elif "attention_mask" in name:
@@ -146,10 +152,10 @@ def step3_validate():
         total_time += elapsed
 
         logits = outputs[0][0]
-        probs = np.exp(logits) / np.sum(np.exp(logits))  # softmax
+        probs = np.exp(logits - np.max(logits)) / np.sum(np.exp(logits - np.max(logits)))
         idx = int(np.argmax(probs))
 
-        print(f"   \"{text[:50]}...\"")
+        print(f"   \"{text[:50]}\"")
         print(f"   → {classes[idx]} (confidence: {probs[idx]:.2%}) [{elapsed:.0f}ms]")
         print()
 
@@ -163,17 +169,21 @@ def main():
     print("  BERT Stress Model → ONNX INT8 Conversion")
     print("=" * 60)
 
-    tf_size = os.path.getsize(TF_MODEL_PATH) / (1024 * 1024) if os.path.exists(TF_MODEL_PATH) else 0
-    print(f"\n   Source: {TF_MODEL_PATH}")
-    print(f"   Size:   {tf_size:.1f} MB")
+    tf_model_path = os.path.join(MODEL_DIR, "tf_model.h5")
+    if os.path.exists(tf_model_path):
+        tf_size = os.path.getsize(tf_model_path) / (1024 * 1024)
+        print(f"\n   Source: {MODEL_DIR}")
+        print(f"   tf_model.h5 size: {tf_size:.1f} MB")
 
     step1_export_to_onnx()
     step2_quantize_int8()
     step3_validate()
 
+    final_size = os.path.getsize(ONNX_QUANTIZED_PATH) / (1024 * 1024)
     print("\n" + "=" * 60)
     print("  ✅ Conversion complete!")
     print(f"  Quantized model: {ONNX_QUANTIZED_PATH}")
+    print(f"  Final size: {final_size:.1f} MB (was 417.9 MB)")
     print("=" * 60)
 
 

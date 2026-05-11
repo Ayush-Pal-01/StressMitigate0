@@ -49,7 +49,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 # ---------- CORS ----------
-CORS_ORIGINS = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5500", "http://localhost:8000"]
+CORS_ORIGINS = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5500", "http://localhost:8000", "http://127.0.0.1:8000"]
 
 # ---------- Fallback Response ----------
 LLM_FALLBACK = (
